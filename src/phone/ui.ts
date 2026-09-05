@@ -5,7 +5,8 @@
 
 import { AudioInputSource } from '@evenrealities/even_hub_sdk'
 import { TUNINGS } from '../tuning/notes'
-import { IN_TUNE_CENTS } from '../config'
+import { IN_TUNE_CENTS, METER_HALF_PX } from '../config'
+import { centsToOffsetPx } from '../glasses/display'
 import type { TunerSettings, TunerView, Surface } from '../tuner'
 import './styles.css'
 
@@ -50,7 +51,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     <div class="meter" id="meter">
       <div class="needle" id="needle" data-idle="true" style="left:50%"></div>
     </div>
-    <div class="scale"><span id="scale-lo">&minus;50</span><span>0</span><span id="scale-hi">+50</span></div>
+    <div class="scale"><span>&minus;50</span><span>&minus;4.5</span><span>0</span><span>+4.5</span><span>+50</span></div>
 
     <div class="session">
       <div class="pips" id="pips"></div>
@@ -111,22 +112,26 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   const stateEl = el('state')
   const noticeEl = el('notice')
   const legendEl = el('legend')
-  const scaleLo = el('scale-lo')
-  const scaleHi = el('scale-hi')
 
   let settings: TunerSettings = { a4: 440, tuningId: TUNINGS[0].id, capo: 0 }
   let micActive = false
   let micSource: AudioInputSource = AudioInputSource.Glasses
   let currentSurface: Surface = 'glasses'
-  let lastRange = 50
 
   // --- meter ticks (drawn once) -----------------------------------------
-  for (const pct of [0, 25, 50, 75, 100]) {
+  // Breakpoints of the expanded-centre curve, plus the in-tune band.
+  for (const cents of [-50, -4.5, 4.5, 50]) {
     const t = document.createElement('div')
-    t.className = pct === 50 ? 'tick centre' : 'tick'
-    t.style.left = `${pct}%`
+    t.className = 'tick'
+    t.style.left = `${50 + (centsToOffsetPx(cents) / METER_HALF_PX) * 50}%`
     meterEl.appendChild(t)
   }
+  const band = document.createElement('div')
+  band.className = 'band'
+  const bandHalf = (centsToOffsetPx(IN_TUNE_CENTS) / METER_HALF_PX) * 50
+  band.style.left = `${50 - bandHalf}%`
+  band.style.width = `${bandHalf * 2}%`
+  meterEl.appendChild(band)
 
   // --- session pips ------------------------------------------------------
   const pipsEl = el('pips')
@@ -224,12 +229,6 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
       }
 
       // Labels must follow the auto-zoom, or the needle changes meaning.
-      if (view.meterRange !== lastRange) {
-        lastRange = view.meterRange
-        scaleLo.textContent = `−${view.meterRange}`
-        scaleHi.textContent = `+${view.meterRange}`
-      }
-
       buildPips(view.tuning.strings)
       for (let i = 0; i < pips.length; i++) {
         pips[i].dataset.done = String(view.tuned[i] === true)
@@ -281,7 +280,8 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
             ? 'loosen'
             : 'tighten'
 
-      const pct = clamp(50 + (cents / view.meterRange) * 50, 0, 100)
+      // Same expanded-centre curve as the glasses, so both agree.
+      const pct = clamp(50 + (centsToOffsetPx(cents) / METER_HALF_PX) * 50, 0, 100)
       needleEl.style.left = `${pct}%`
       needleEl.dataset.idle = 'false'
       needleEl.dataset.tuned = String(view.confirmed)

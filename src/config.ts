@@ -24,8 +24,6 @@ export const READING_HOLD_MS = 1400
 /** Silence after which the mic is released. */
 export const IDLE_TIMEOUT_MS = 3 * 60 * 1000
 
-export const METER_COARSE_CENTS = 50
-export const METER_FINE_CENTS = 10
 
 /**
  * Noise gate. The floor tracks the room and the gate sits a margin above it,
@@ -61,6 +59,31 @@ export const ADVANCE_DELAY_MS = 1200
 /** Highest capo position offered. */
 export const MAX_CAPO = 12
 
-/** Hysteresis: equal thresholds would make the scale flap on the boundary. */
-export const FINE_ENTER_CENTS = 8
-export const FINE_EXIT_CENTS = 12
+/**
+ * The meter is one continuous scale with an expanded centre, not two scales.
+ *
+ * Two scales sharing one strip of pixels made the needle teleport 150px when
+ * it crossed between them. Here the inner region is stretched and the outer
+ * compressed, so there is no boundary to cross.
+ *
+ * The inner half of the meter covers +/-4.5 cents, which puts the in-tune band
+ * at exactly +/-40px: two character cells either side of centre.
+ */
+export const METER_MAX_CENTS = 50
+export const METER_HALF_PX = 240
+export const METER_INNER_CENTS = 4.5
+export const METER_INNER_PX = 120
+
+/** Needle must move this many 5px dots before it is redrawn. */
+export const NEEDLE_HYSTERESIS_DOTS = 2
+
+/** Smoothing is heavier within this distance of the target, lighter beyond. */
+export const STEADY_WITHIN_CENTS = 5
+export const SMOOTH_ALPHA_NEAR = 0.15
+export const SMOOTH_ALPHA_FAR = 0.5
+
+/** Analysis window doubles inside this distance, halving estimate variance. */
+export const LONG_WINDOW_WITHIN_CENTS = 8
+
+/** Skip a frame whose level fell by more than this fraction since the last. */
+export const DECAY_REJECT_RATIO = 0.6

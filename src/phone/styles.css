@@ -123,6 +123,16 @@ body {
   border-top: 1px solid var(--rule);
 }
 
+/* The in-tune target, drawn as a region rather than a line. */
+.band {
+  position: absolute;
+  top: 0;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--text);
+  opacity: 0.25;
+}
+
 .tick {
   position: absolute;
   top: 0;
@@ -131,7 +141,6 @@ body {
   background: var(--rule);
 }
 
-.tick.centre { height: 13px; background: var(--text); }
 
 .needle {
   position: absolute;

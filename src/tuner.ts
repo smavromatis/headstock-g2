@@ -8,6 +8,7 @@
  */
 
 import { detectPitch, rmsOf, WINDOW_SIZE } from './audio/pitch'
+import { midiToFreq } from './tuning/notes'
 import { AudioRingBuffer, PitchSmoother, SAMPLE_RATE, decodePcm } from './audio/stream'
 import {
   DEFAULT_TUNING,
@@ -20,23 +21,27 @@ import {
   type Tuning,
 } from './tuning/notes'
 import {
+  ADVANCE_DELAY_MS,
   ATTACK_SKIP_MS,
   CONFIRM_HOLD_MS,
-  FINE_ENTER_CENTS,
-  FINE_EXIT_CENTS,
-  IDLE_TIMEOUT_MS,
-  ADVANCE_DELAY_MS,
+  DECAY_REJECT_RATIO,
   GATE_MARGIN,
   HZ_UPDATE_MS,
+  IDLE_TIMEOUT_MS,
   IN_TUNE_CENTS,
+  LONG_WINDOW_WITHIN_CENTS,
   MAX_CAPO,
-  METER_COARSE_CENTS,
   MIN_GATE,
   NOISE_CREEP,
   NOISE_FALL,
-  METER_FINE_CENTS,
   READING_HOLD_MS,
+  SMOOTH_ALPHA_FAR,
+  SMOOTH_ALPHA_NEAR,
+  STEADY_WITHIN_CENTS,
 } from './config'
+
+/** Long window used when close to the target, for lower estimate variance. */
+const LONG_WINDOW_SIZE = WINDOW_SIZE * 2
 
 export type TunerPhase = 'starting' | 'listening' | 'reading' | 'idle' | 'micError'
 
@@ -70,10 +75,6 @@ export interface TunerView {
   inTolerance: boolean
   /** Held inside the band for CONFIRM_HOLD_MS - this is the real "in tune". */
   confirmed: boolean
-  /** Meter is on the fine scale. */
-  fine: boolean
-  /** Half-range of the meter in cents (coarse or fine). */
-  meterRange: number
   /** Which strings have been confirmed in tune this session. */
   tuned: readonly boolean[]
   /** The tuning as it sounds, with any capo already applied. */
@@ -82,9 +83,10 @@ export interface TunerView {
 }
 
 export class Tuner {
-  private readonly ring = new AudioRingBuffer(WINDOW_SIZE * 3)
+  private readonly ring = new AudioRingBuffer(LONG_WINDOW_SIZE * 2)
   private readonly smoother = new PitchSmoother()
   private readonly window = new Float32Array(WINDOW_SIZE)
+  private readonly longWindow = new Float32Array(LONG_WINDOW_SIZE)
 
   private lastDetectionAt = 0
   private lastSoundAt = 0
@@ -101,9 +103,6 @@ export class Tuner {
   // Settle
   private inToleranceSince: number | null = null
   private confirmed = false
-
-  // Meter scale
-  private fine = false
 
   /** The preset as chosen; `tuning` is this with the capo applied. */
   private basePreset: Tuning = DEFAULT_TUNING
@@ -208,7 +207,15 @@ export class Tuner {
    * events arrive in small chunks that mostly re-read the same window.
    */
   advance(now: number): void {
-    const window = this.ring.latest(WINDOW_SIZE, this.window)
+    // A longer window halves estimate variance. Only affordable when close,
+    // where adjustments are small and slow; further out the shorter window
+    // keeps the needle responsive.
+    const close =
+      this.currentCents !== null && Math.abs(this.currentCents) <= LONG_WINDOW_WITHIN_CENTS
+    const window = close
+      ? (this.ring.latest(LONG_WINDOW_SIZE, this.longWindow) ??
+        this.ring.latest(WINDOW_SIZE, this.window))
+      : this.ring.latest(WINDOW_SIZE, this.window)
 
     if (window) {
       const level = rmsOf(window)
@@ -233,11 +240,22 @@ export class Tuner {
       this.prevRms = level
       if (level > gate) this.lastSoundAt = now
 
-      if (now >= this.suppressUntil) {
-        const result = detectPitch(window, SAMPLE_RATE, { minRms: gate })
+      // A steeply falling level means the note is decaying hard, where its
+      // pitch is genuinely moving; those frames drag the estimate flat.
+      const decaying = this.prevRms > 0 && level < this.prevRms * DECAY_REJECT_RATIO
+
+      if (now >= this.suppressUntil && !decaying) {
+        const result = detectPitch(window, SAMPLE_RATE, {
+          minRms: gate,
+          ...this.searchRange(),
+        })
         if (result) {
-          const smoothed = this.smoother.push(result.freq)
-          this.lastFreq = smoothed
+          // Steady near the target, quick further out, and a marginal frame
+          // moves the needle less than a clean one.
+          const near =
+            this.currentCents !== null && Math.abs(this.currentCents) <= STEADY_WITHIN_CENTS
+          const alpha = (near ? SMOOTH_ALPHA_NEAR : SMOOTH_ALPHA_FAR) * result.confidence
+          this.lastFreq = this.smoother.push(result.freq, alpha)
           this.lastDetectionAt = now
         }
       }
@@ -249,7 +267,6 @@ export class Tuner {
       this.lastStringIndex = null
       this.offScale = false
       this.resetSettle()
-      this.fine = false
     }
 
     this.updateMatch()
@@ -257,6 +274,19 @@ export class Tuner {
     this.advanceLock(now)
     this.updateShownFreq(now)
     this.updatePhase(now)
+  }
+
+  /**
+   * Frequency window to search once a string is expected. Three semitones
+   * either side covers anything worth calling by that string's name.
+   */
+  private searchRange(): { fMin?: number; fMax?: number } {
+    const target =
+      this.lockedString ??
+      (this.lastStringIndex !== null ? this.tuning.strings[this.lastStringIndex] : null)
+    if (!target) return {}
+    const centre = midiToFreq(target.midi, this.settings.a4)
+    return { fMin: centre * Math.pow(2, -0.25), fMax: centre * Math.pow(2, 0.25) }
   }
 
   private updateMatch(): void {
@@ -293,12 +323,6 @@ export class Tuner {
       this.resetSettle()
     }
 
-    // Hysteresis, so the scale cannot flap on the boundary.
-    if (usable) {
-      const abs = Math.abs(c)
-      if (!this.fine && abs <= FINE_ENTER_CENTS) this.fine = true
-      else if (this.fine && abs > FINE_EXIT_CENTS) this.fine = false
-    }
   }
 
   /**
@@ -374,8 +398,6 @@ export class Tuner {
       offScale: this.offScale,
       inTolerance,
       confirmed: this.confirmed,
-      fine: this.fine,
-      meterRange: this.fine ? METER_FINE_CENTS : METER_COARSE_CENTS,
       tuned: this.tuned,
       tuning: this.tuning,
       capo: this.settings.capo,
@@ -393,7 +415,6 @@ export class Tuner {
     this.prevRms = 0
     this.suppressUntil = 0
     this.resetSettle()
-    this.fine = false
   }
 
   /** Called when the mic is (re)started, so idle timing starts fresh. */

@@ -13,6 +13,7 @@ import {
   buildReadoutRow,
   buildScaleRow,
   buildStringsRow,
+  needleDot,
 } from '../src/glasses/display'
 import { textWidth } from '../src/glasses/metrics'
 import { TUNINGS, transposeTuning } from '../src/tuning/notes'
@@ -35,8 +36,8 @@ for (const preset of TUNINGS) {
     const tuning = transposeTuning(preset, capo)
     for (const phase of ['reading', 'listening', 'idle', 'micError'] as const) {
       for (const locked of [false, true]) {
-        for (let cents = -60; cents <= 60; cents += 0.5) {
-          for (const fine of [false, true]) {
+        for (let cents = -60; cents <= 60; cents += 0.25) {
+          {
             const view = {
               phase, locked, cents,
               stringIndex: 2,
@@ -45,8 +46,6 @@ for (const preset of TUNINGS) {
               offScale: false,
               inTolerance: Math.abs(cents) <= 1.5,
               confirmed: Math.abs(cents) <= 1.5,
-              fine,
-              meterRange: fine ? 10 : 50,
               tuned: tuning.strings.map((_, i) => i % 2 === 0),
               tuning,
               capo,
@@ -56,7 +55,7 @@ for (const preset of TUNINGS) {
               ['header', buildHeaderRow(view)],
               ['readout', buildReadoutRow(view)],
               ['strings', buildStringsRow(view)],
-              ['scale', buildScaleRow(fine)],
+              ['scale', buildScaleRow()],
             ] as const) {
               seen.rows++
               const w = textWidth(text)
@@ -66,7 +65,7 @@ for (const preset of TUNINGS) {
             seen.needles++
             const needle = textWidth(buildNeedleRow(view))
             check('needle width constant', needle === NEEDLE_W,
-              `${preset.name} ${cents}c fine=${fine} -> ${needle}px, expected ${NEEDLE_W}`)
+              `${preset.name} ${cents}c -> ${needle}px, expected ${NEEDLE_W}`)
 
             seen.notes++
             const lines = buildNoteBlock(view).split('\n')
@@ -80,6 +79,19 @@ for (const preset of TUNINGS) {
       }
     }
   }
+}
+
+// The dual-scale meter used to teleport the needle 150px when it switched
+// between scales. One continuous curve must never move it more than a dot.
+{
+  let worst = 0
+  let at = 0
+  for (let c = -50; c <= 50; c += 0.01) {
+    const step = Math.abs(needleDot(c + 0.01) - needleDot(c)) * 5
+    if (step > worst) { worst = step; at = c }
+  }
+  check('needle never jumps', worst <= 5, `${worst}px at ${at.toFixed(2)} cents`)
+  console.log(`  largest needle step for a 0.01 cent change: ${worst}px`)
 }
 
 console.log(`  checked ${seen.rows} rows, ${seen.needles} needle positions, ${seen.notes} note blocks`)

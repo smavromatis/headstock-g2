@@ -46,16 +46,20 @@ export function rmsOf(buf: Float32Array): number {
 export function detectPitch(
   buf: Float32Array,
   sampleRate: number,
-  opts: { minRms?: number; minConfidence?: number } = {},
+  opts: { minRms?: number; minConfidence?: number; fMin?: number; fMax?: number } = {},
 ): PitchResult | null {
   const minRms = opts.minRms ?? 0.004
   const minConfidence = opts.minConfidence ?? 0.55
+  // Narrowing the search to the expected string removes octave errors outright
+  // and stops noise outside the band from being considered at all.
+  const fMin = Math.max(F_MIN, opts.fMin ?? F_MIN)
+  const fMax = Math.min(F_MAX, opts.fMax ?? F_MAX)
 
   const rms = rmsOf(buf)
   if (rms < minRms) return null
 
-  const tauMin = Math.max(2, Math.floor(sampleRate / F_MAX))
-  const tauMax = Math.min(Math.ceil(sampleRate / F_MIN), (buf.length / 2) | 0)
+  const tauMin = Math.max(2, Math.floor(sampleRate / fMax))
+  const tauMax = Math.min(Math.ceil(sampleRate / fMin), (buf.length / 2) | 0)
   if (tauMax <= tauMin + 2) return null
 
   // --- Stage 1: YIN ------------------------------------------------------
@@ -116,7 +120,7 @@ export function detectPitch(
   if (tauRefined <= 0) return null
 
   const coarse = sampleRate / tauRefined
-  if (coarse < F_MIN || coarse > F_MAX) return null
+  if (coarse < fMin || coarse > fMax) return null
 
   // Two passes: the first moves the analysis bin onto the fundamental, the
   // second removes the residual bias from the bin having been offset.

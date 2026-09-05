@@ -20,7 +20,15 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import { renderBlockText, blockTextWidth } from './blockfont'
 import { TUNINGS } from '../tuning/notes'
-import { NEAR_CENTS } from '../config'
+import {
+  IN_TUNE_CENTS,
+  METER_HALF_PX,
+  METER_INNER_CENTS,
+  METER_INNER_PX,
+  METER_MAX_CENTS,
+  NEAR_CENTS,
+  NEEDLE_HYSTERESIS_DOTS,
+} from '../config'
 import { textWidth } from './metrics'
 import type { BridgeQueue } from '../bridge-queue'
 import type { TunerView } from '../tuner'
@@ -34,8 +42,6 @@ const CELL = 20 // px per full-width glyph
 const SCALE_CELLS = ROW_W / CELL // 27
 const NEEDLE_DOTS = ROW_W / 5 // 108 dots of 5px each
 
-/** Half-span of the meter in pixels; the cents it maps to depends on scale. */
-const METER_HALF_PX = 240
 
 /**
  * Three characters: letter, accidental, octave. Half step down and open D
@@ -59,46 +65,81 @@ export const CONTAINERS = {
 // --- Row builders --------------------------------------------------------
 
 /**
- * The scale. Ends mark flat/sharp, the centre is the target, and the ticks sit
- * at half range, where the needle lands at that value.
+ * Signed pixel offset from centre for a deviation in cents.
  *
- * Coarse and fine use different glyphs because the needle occupies the same
- * pixels on both scales; the scale has to say which is in force.
+ * One continuous curve: the inner region is stretched so small errors are
+ * visible, the outer compressed so a badly flat string still fits. Both halves
+ * meet at METER_INNER_CENTS with the same value, so the needle never jumps.
  */
-export function buildScaleRow(fine: boolean): string {
-  const track = fine ? '═' : '─'
-  const centre = fine ? '╪' : '┼'
+export function centsToOffsetPx(cents: number): number {
+  const clamped = Math.max(-METER_MAX_CENTS, Math.min(METER_MAX_CENTS, cents))
+  const mag = Math.abs(clamped)
+  const px =
+    mag <= METER_INNER_CENTS
+      ? (mag / METER_INNER_CENTS) * METER_INNER_PX
+      : METER_INNER_PX +
+        ((mag - METER_INNER_CENTS) / (METER_MAX_CENTS - METER_INNER_CENTS)) *
+          (METER_HALF_PX - METER_INNER_PX)
+  return Math.sign(clamped) * px
+}
+
+/** Cell index whose centre is nearest a signed offset from the row's middle. */
+function cellAtOffset(px: number): number {
+  return Math.round((ROW_W / 2 + px - CELL / 2) / CELL)
+}
+
+/**
+ * The scale.
+ *
+ * The in-tune band is drawn as a region rather than a line: at +/-1.5 cents it
+ * is 40px wide either side, which is visible, where a single centre tick was
+ * 7px and impossible to aim into. The inner stretched region uses a light rule
+ * and the compressed outer region a double one, so the change in gradient is
+ * legible.
+ */
+export function buildScaleRow(): string {
+  const bandLeft = cellAtOffset(-centsToOffsetPx(IN_TUNE_CENTS))
+  const bandRight = cellAtOffset(centsToOffsetPx(IN_TUNE_CENTS))
+
   const cells: string[] = []
   for (let i = 0; i < SCALE_CELLS; i++) {
+    const offset = i * CELL + CELL / 2 - ROW_W / 2
     if (i === 0) cells.push('♭')
     else if (i === SCALE_CELLS - 1) cells.push('♯')
-    else if (i === 13) cells.push(centre)
-    else if (i === 7 || i === 19) cells.push('┬')
-    else cells.push(track)
+    else if (i === bandLeft) cells.push('┤')
+    else if (i === bandRight) cells.push('├')
+    else if (i > bandLeft && i < bandRight) cells.push(BLANK_CELL)
+    else if (Math.abs(offset) <= METER_INNER_PX) cells.push('─')
+    else cells.push('═')
   }
   return cells.join('')
 }
+
+/** One unlit cell: four spaces measure exactly as wide as one glyph. */
+const BLANK_CELL = '    '
 
 /**
  * The moving needle: 108 dots of 5px. The marker is 20px, exactly four dots,
  * so swapping keeps the row's width identical at every position. Without that
  * the meter shivers as the needle moves, since the font is proportional.
  */
-export function buildNeedleRow(view: TunerView): string {
+/** Dot index the needle would occupy, before any hysteresis. */
+export function needleDot(cents: number): number {
+  const centreX = ROW_W / 2 + centsToOffsetPx(cents)
+  const leftX = Math.max(0, Math.min(ROW_W - CELL, centreX - CELL / 2))
+  return Math.max(0, Math.min(NEEDLE_DOTS - 4, Math.round(leftX / 5)))
+}
+
+export function buildNeedleRow(view: TunerView, dot?: number): string {
   if (view.cents === null || view.stringIndex === null) {
     return '·'.repeat(NEEDLE_DOTS)
   }
-  const range = view.meterRange
-  const clamped = Math.max(-range, Math.min(range, view.cents))
-  const centreX = ROW_W / 2 + (clamped / range) * METER_HALF_PX
-  const leftX = Math.max(0, Math.min(ROW_W - CELL, centreX - CELL / 2))
-
-  const dotIndex = Math.max(0, Math.min(NEEDLE_DOTS - 4, Math.round(leftX / 5)))
+  const index = dot ?? needleDot(view.cents)
 
   // Arrow while live, diamond inside the band, block once it has held.
   // Without this the settle logic is invisible.
   const marker = view.confirmed ? '█' : view.inTolerance ? '◆' : '▲'
-  return '·'.repeat(dotIndex) + marker + '·'.repeat(NEEDLE_DOTS - dotIndex - 4)
+  return '·'.repeat(index) + marker + '·'.repeat(NEEDLE_DOTS - index - 4)
 }
 
 export function buildNoteBlock(view: TunerView): string {
@@ -223,6 +264,7 @@ const SPACE_PX = 5
  * queueing, so the needle stays current instead of trailing the peg.
  */
 export class GlassesRenderer {
+  private lastNeedleDot: number | null = null
   private lastSent = new Map<string, string>()
   private lastColor = new Map<string, number>()
   private pending: { kind: 'view'; view: TunerView } | { kind: 'standby' } | null = null
@@ -249,7 +291,7 @@ export class GlassesRenderer {
       textObject: [
         text(c.header, buildHeaderRow(view), c.header.color, 1),
         text(c.note, buildNoteBlock(view), c.note.color),
-        text(c.scale, buildScaleRow(view.fine), c.scale.color),
+        text(c.scale, buildScaleRow(), c.scale.color),
         text(c.needle, buildNeedleRow(view), c.needle.color),
         text(c.readout, buildReadoutRow(view), c.readout.color),
         text(c.strings, buildStringsRow(view), c.strings.color),
@@ -303,11 +345,35 @@ export class GlassesRenderer {
     return [
       [CONTAINERS.header, padBetween('HEADSTOCK', 'PHONE', ROW_W), 2],
       [CONTAINERS.note, renderBlockText('- -'), 2],
-      [CONTAINERS.scale, buildScaleRow(false), 1],
+      [CONTAINERS.scale, buildScaleRow(), 1],
       [CONTAINERS.needle, '·'.repeat(NEEDLE_DOTS), 1],
       [CONTAINERS.readout, centreish('TUNING ON PHONE', ROW_W), 3],
       [CONTAINERS.strings, centreish('', ROW_W), 1],
     ]
+  }
+
+  /**
+   * Needle position with hysteresis.
+   *
+   * A real string wanders a cent or two while it decays, which was enough to
+   * hop the needle between adjacent cells continuously. It now has to move
+   * more than one dot before it is redrawn, which removes the flicker without
+   * capping how far it can travel.
+   */
+  private steadyNeedleDot(view: TunerView): number | undefined {
+    if (view.cents === null || view.stringIndex === null) {
+      this.lastNeedleDot = null
+      return undefined
+    }
+    const dot = needleDot(view.cents)
+    if (
+      this.lastNeedleDot !== null &&
+      Math.abs(dot - this.lastNeedleDot) < NEEDLE_HYSTERESIS_DOTS
+    ) {
+      return this.lastNeedleDot
+    }
+    this.lastNeedleDot = dot
+    return dot
   }
 
   /** Forces the next render to resend every row (used after a foreground return). */
@@ -336,12 +402,12 @@ export class GlassesRenderer {
           [CONTAINERS.header, buildHeaderRow(view), CONTAINERS.header.color],
           // Dim a stale reading, so a decayed string never looks live.
           [CONTAINERS.note, buildNoteBlock(view), view.phase === 'reading' ? 4 : 2],
-          // Fine mode changes the rule and lifts brightness. The rule change
-          // alone was too subtle to catch at a glance.
-          [CONTAINERS.scale, buildScaleRow(view.fine), view.fine ? 3 : 1],
+          // One continuous scale, so this only changes when the in-tune band
+          // moves; it is sent for the initial draw and after a rebuild.
+          [CONTAINERS.scale, buildScaleRow(), 2],
           [
             CONTAINERS.needle,
-            buildNeedleRow(view),
+            buildNeedleRow(view, this.steadyNeedleDot(view)),
             view.confirmed ? 4 : view.inTolerance ? 4 : near ? 3 : 2,
           ],
           [CONTAINERS.readout, buildReadoutRow(view), view.confirmed ? 4 : 3],

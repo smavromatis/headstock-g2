@@ -120,7 +120,8 @@ export class PitchSmoother {
     private readonly alpha = 0.4,
   ) {}
 
-  push(freq: number): number {
+  /** `alpha` may vary per call, so smoothing can tighten near the target. */
+  push(freq: number, alpha = this.alpha): number {
     this.history.push(freq)
     if (this.history.length > this.medianLength) this.history.shift()
 
@@ -131,7 +132,7 @@ export class PitchSmoother {
     if (this.ema === null || Math.abs(1200 * Math.log2(median / this.ema)) > 100) {
       this.ema = median
     } else {
-      this.ema = this.ema + this.alpha * (median - this.ema)
+      this.ema = this.ema + alpha * (median - this.ema)
     }
     return this.ema
   }

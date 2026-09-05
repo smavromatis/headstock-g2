@@ -70,6 +70,11 @@ of error.
 
 `src/audio/pitch.ts` runs YIN over a 4096-sample window for an octave-safe
 period, then refines it from the phase advance between two overlapping windows.
+Within 8 cents of the target the window doubles to 512ms, halving estimate
+variance where precision matters. Once a string is identified the search is
+restricted to three semitones around it, and frames taken while the level is
+falling steeply are skipped, since a decaying string's pitch is genuinely
+moving.
 The refinement is not optional: YIN alone reads 4.2 cents sharp on a nylon low
 E, whose upper partials sit above exact harmonics and pull the period with them.
 
@@ -97,8 +102,17 @@ A reading counts as in tune only after holding within 1.5 cents for 800 ms, and
 analysis pauses for 250 ms after each pluck to exclude the attack transient.
 The needle shows three states: `▲` live, `◆` inside the band, `█` held.
 
-Inside 8 cents the meter rescales to plus or minus 10, returning above 12. The
-scale row changes rule and brightness so the two cannot be confused.
+The meter is one continuous scale with an expanded centre: 0.19 cents per step
+near the target, 1.9 at the edges. It replaced an auto-zoom between two scales,
+which teleported the needle 150px whenever it switched between them. The
+in-tune band is drawn as a region rather than a line, since at plus or minus
+1.5 cents it is 40px wide either side, where a centre tick was 7px and
+impossible to aim into.
+
+The needle needs to move more than one dot before it is redrawn, because a real
+string wanders a cent or two while it decays and was hopping between adjacent
+cells continuously. Smoothing tightens within 5 cents of the target and each
+reading is weighted by detection confidence.
 
 The header counts confirmed strings. After three minutes of silence the mic is
 released and the display offers `TAP TO RESUME`.
