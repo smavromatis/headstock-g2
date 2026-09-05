@@ -343,7 +343,11 @@ export class Tuner {
       // played, so its cents are meaningless: measuring the high E against A2
       // gives 1885 cents and pins the needle to the rail under the wrong
       // name. Show nothing for those frames instead of something wrong.
-      const settling = this.candidateFrames > 0
+      //
+      // One stray frame does not count. A single bad reading used to blank the
+      // display for a frame, which flickered between the note and NO STRING
+      // MATCH; holding the last good reading through it is correct.
+      const settling = this.candidateFrames > 1
       this.offScale = !m.inRange || settling
     }
   }
