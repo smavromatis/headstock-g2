@@ -267,6 +267,17 @@ async function resumeFromIdle(): Promise<void> {
 
 function onHubEvent(event: EvenHubEvent): void {
   if (event.audioEvent) {
+    // Audio arriving is proof the microphone is live, whatever audioControl
+    // reported. Its result cannot be trusted alone: the call can time out
+    // behind a permission dialog and still succeed, which left a permanent
+    // "microphone did not start" on screen while the mic was running.
+    if (tuner.currentPhase === 'micError') {
+      tuner.setPhase('listening')
+      tuner.markActive(Date.now())
+      phone?.setMic({ active: true, source: micSource })
+      phone?.setStatus({ connection: 'ok', message: '' })
+    }
+
     // The host still pushes live mic audio during a demo; mixing it with the
     // synthetic tone interleaves silence and makes the reading drift.
     if (!demoTimer) tuner.ingest(event.audioEvent.audioPcm)
