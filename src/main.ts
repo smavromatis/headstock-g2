@@ -43,6 +43,20 @@ let menuConfirmed = false
  */
 let inputArmedAt = Number.POSITIVE_INFINITY
 const INPUT_ARM_MS = 750
+
+/**
+ * True while the OS exit dialog is on screen.
+ *
+ * The dialog is drawn by the host over our page, but our frame loop does not
+ * stop: at 10 fps it kept repainting the rows underneath it, and the bottom
+ * row sits at y=250 on a 288px canvas, right where the dialog's border is.
+ * Rendering pauses until the dialog is gone.
+ */
+let exitDialogOpen = false
+let exitDialogOpenedAt = 0
+
+/** Safety net, in case cancelling the dialog reports nothing at all. */
+const EXIT_DIALOG_TIMEOUT_MS = 20000
 const SETTINGS_KEY = 'tuneful.settings.v1'
 
 const tuner = new Tuner()
@@ -226,6 +240,8 @@ function onHubEvent(event: EvenHubEvent): void {
   // Scroll gestures arrive as textEvent; clicks do not, they come through
   // sysEvent. This is the most common event-handling bug on this platform.
   if (event.textEvent) {
+    // A swipe means the exit dialog is gone and the user stayed.
+    closeExitDialog()
     const type = event.textEvent.eventType ?? 0
     const up = type === OsEventTypeList.SCROLL_TOP_EVENT
     const down = type === OsEventTypeList.SCROLL_BOTTOM_EVENT
@@ -254,6 +270,9 @@ function onHubEvent(event: EvenHubEvent): void {
     // Protobuf omits zero values, so a single click arrives as undefined.
     const type = event.sysEvent.eventType ?? 0
 
+    // Any input means the dialog is gone and the user stayed in the app.
+    if (exitDialogOpen && type !== OsEventTypeList.SYSTEM_EXIT_EVENT) closeExitDialog()
+
     // Lifecycle events are always acted on; user input waits for the guard.
     const isInput =
       type === OsEventTypeList.CLICK_EVENT ||
@@ -281,10 +300,13 @@ function onHubEvent(event: EvenHubEvent): void {
       case OsEventTypeList.DOUBLE_CLICK_EVENT:
         // Nothing is torn down here: the user can still cancel, and cleaning
         // up now would leave a live app that has stopped listening.
+        exitDialogOpen = true
+        exitDialogOpenedAt = Date.now()
         void bridge?.shutDownPageContainer(1)
         break
       case OsEventTypeList.FOREGROUND_ENTER_EVENT:
         // The host may have migrated us through a headless WebView.
+        closeExitDialog()
         tuner.reset()
         renderer?.invalidate()
         paint()
@@ -305,6 +327,10 @@ function onHubEvent(event: EvenHubEvent): void {
 function tick(): void {
   const now = Date.now()
   tuner.advance(now)
+
+  if (exitDialogOpen && now - exitDialogOpenedAt > EXIT_DIALOG_TIMEOUT_MS) {
+    closeExitDialog()
+  }
 
   if (tuner.currentPhase !== 'idle' && tuner.isIdle(now)) {
     void goIdle()
@@ -336,9 +362,23 @@ function redrawGlasses(): void {
 
 function paint(): void {
   const view = tuner.view()
-  if (surface === 'glasses') renderer?.render(view)
-  else renderer?.renderStandby()
+  // The host owns the display while its exit dialog is up. Drawing under it
+  // clips the dialog, so the glasses are left alone until it closes.
+  if (!exitDialogOpen) {
+    if (surface === 'glasses') renderer?.render(view)
+    else renderer?.renderStandby()
+  }
   phone?.setReading(view, surface)
+}
+
+/**
+ * The dialog was dismissed without exiting. The host drew over our containers,
+ * so everything is resent rather than diffed against what we last sent.
+ */
+function closeExitDialog(): void {
+  if (!exitDialogOpen) return
+  exitDialogOpen = false
+  renderer?.invalidate()
 }
 
 // --- Settings persistence -----------------------------------------------

@@ -112,6 +112,11 @@ because the user can still cancel. Confirming closes the page and the glasses
 return to their menu; the app is told via `SYSTEM_EXIT_EVENT`, which is where
 the microphone is released and listeners are removed.
 
+Rendering pauses while that dialog is up. The host draws it over the page but
+the frame loop does not stop on its own, and repainting underneath clipped the
+dialog's border. Rendering resumes on the next input or foreground event, and
+resends every row, since the host has drawn over them.
+
 A locked string is never treated as off-scale. The microphone choice decides
 which surface is the tuner, and the app falls back to the phone if the glasses
 page cannot be created.
