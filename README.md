@@ -97,14 +97,20 @@ released and the display offers `TAP TO RESUME`.
 
 | Gesture | Action |
 |---|---|
-| Tap | Lock to the current string, or unlock. Resumes when idle. |
+| Tap | Lock to the current string, or unlock. Resumes when paused. |
 | Swipe up or down | Choose the string |
-| Double tap | Exit |
-| Long press | Next tuning, until the OS menu is confirmed working |
+| Long press | Change tuning |
+| Double tap | Exit to the glasses menu |
 
 The tuning presets are published to the OS contextual menu via `menuObject`.
 The gesture that opens that menu is not documented, so long press cycles the
 presets as a fallback and stops doing so once a menu selection has been seen.
+
+Double tap calls `shutDownPageContainer(1)`, which asks the OS to show its exit
+confirmation rather than quitting outright. Nothing is torn down at that point,
+because the user can still cancel. Confirming closes the page and the glasses
+return to their menu; the app is told via `SYSTEM_EXIT_EVENT`, which is where
+the microphone is released and listeners are removed.
 
 A locked string is never treated as off-scale. The microphone choice decides
 which surface is the tuner, and the app falls back to the phone if the glasses
