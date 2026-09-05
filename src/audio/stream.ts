@@ -68,6 +68,15 @@ export function decodePcm(raw: unknown): Float32Array {
 type ArrayPcmFormat = 'unknown' | 'bytes' | 'samples'
 let arrayFormat: ArrayPcmFormat = 'unknown'
 
+/**
+ * Forgets the latched format. Must be called when the microphone source
+ * changes: the two sources are separate host paths and need not agree, and a
+ * latch made for one would silently mis-decode the other.
+ */
+export function resetPcmFormat(): void {
+  arrayFormat = 'unknown'
+}
+
 function decodeNumberArray(raw: number[]): Float32Array {
   if (arrayFormat === 'unknown') {
     for (let i = 0; i < raw.length; i++) {

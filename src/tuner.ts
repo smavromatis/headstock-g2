@@ -29,7 +29,8 @@ import {
   HZ_UPDATE_MS,
   IDLE_TIMEOUT_MS,
   IN_TUNE_CENTS,
-  LONG_WINDOW_WITHIN_CENTS,
+  LONG_WINDOW_ENTER_CENTS,
+  LONG_WINDOW_EXIT_CENTS,
   MAX_CAPO,
   MIN_GATE,
   NOISE_CREEP,
@@ -115,6 +116,7 @@ export class Tuner {
   private shownFreqAt = 0
 
   private confirmedAt = 0
+  private longWindowActive = false
 
   // Auto-detect stickiness: a challenger must win several frames in a row.
   private candidateIndex: number | null = null
@@ -215,9 +217,11 @@ export class Tuner {
     // A longer window halves estimate variance. Only affordable when close,
     // where adjustments are small and slow; further out the shorter window
     // keeps the needle responsive.
-    const close =
-      this.currentCents !== null && Math.abs(this.currentCents) <= LONG_WINDOW_WITHIN_CENTS
-    const window = close
+    const dist = this.currentCents === null ? Infinity : Math.abs(this.currentCents)
+    if (!this.longWindowActive && dist <= LONG_WINDOW_ENTER_CENTS) this.longWindowActive = true
+    else if (this.longWindowActive && dist > LONG_WINDOW_EXIT_CENTS) this.longWindowActive = false
+
+    const window = this.longWindowActive
       ? (this.ring.latest(LONG_WINDOW_SIZE, this.longWindow) ??
         this.ring.latest(WINDOW_SIZE, this.window))
       : this.ring.latest(WINDOW_SIZE, this.window)
@@ -439,6 +443,7 @@ export class Tuner {
   reset(): void {
     this.candidateIndex = null
     this.candidateFrames = 0
+    this.longWindowActive = false
     this.ring.clear()
     this.smoother.reset()
     this.shownFreq = null

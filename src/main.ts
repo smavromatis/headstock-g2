@@ -22,6 +22,7 @@ import {
 import { Tuner, DEFAULT_SETTINGS, type TunerSettings, type Surface } from './tuner'
 import { GlassesRenderer, tuningIdForMenuItem } from './glasses/display'
 import { BridgeQueue } from './bridge-queue'
+import { resetPcmFormat } from './audio/stream'
 import { mountPhoneUi, type PhoneUi } from './phone/ui'
 import { midiToFreq } from './tuning/notes'
 
@@ -238,6 +239,8 @@ async function startMic(): Promise<void> {
 async function restartMic(): Promise<void> {
   if (!bridge) return
   await queue.run(() => bridge!.audioControl(false))
+  // The two microphone paths need not agree on payload format.
+  resetPcmFormat()
   tuner.reset()
   await startMic()
 }

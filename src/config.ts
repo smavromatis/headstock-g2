@@ -91,8 +91,15 @@ export const STEADY_WITHIN_CENTS = 5
 export const SMOOTH_ALPHA_NEAR = 0.15
 export const SMOOTH_ALPHA_FAR = 0.5
 
-/** Analysis window doubles inside this distance, halving estimate variance. */
-export const LONG_WINDOW_WITHIN_CENTS = 8
+/**
+ * Analysis window doubles inside this distance, halving estimate variance.
+ *
+ * Hysteresis, because the two window lengths give slightly different estimates
+ * and a bare threshold let it flip every frame right where the user is making
+ * the final small adjustments.
+ */
+export const LONG_WINDOW_ENTER_CENTS = 8
+export const LONG_WINDOW_EXIT_CENTS = 12
 
 /** Skip a frame whose level fell by more than this fraction since the last. */
 export const DECAY_REJECT_RATIO = 0.6

@@ -84,6 +84,12 @@ inside it kept the detection fresh, and the window never widened. Two of ten
 string changes were then never detected at all, and the rest took 1.6s.
 `check:robustness` covers this.
 
+The analysis window and the noise gate both use hysteresis, since a bare
+threshold flips every frame when the value sits on it, and the two window
+lengths give slightly different estimates. The `number[]` payload format latch
+is cleared when the microphone source changes, because the two host paths need
+not agree and a latch made for one would mis-decode the other.
+
 In auto mode the label only switches after another string wins three
 consecutive frames, so an instrument playing nearby cannot flip it frame to
 frame. Strong interference still confuses auto-detect; locking a string is
