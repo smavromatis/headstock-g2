@@ -24,6 +24,7 @@ export interface PhoneUi {
   setStatus(status: { connection: 'ok' | 'degraded' | 'error'; message: string }): void
   setDevice(device: { battery: number | null }): void
   setMic(mic: { active: boolean; source: AudioInputSource }): void
+  setSampleRate(rate: number | null): void
   setSurface(surface: Surface): void
 }
 
@@ -88,6 +89,10 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
           <button type="button" data-source="glasses" aria-pressed="true">Glasses</button>
           <button type="button" data-source="phone" aria-pressed="false">Phone</button>
         </div>
+      </div>
+      <div class="row">
+        <span class="row-label">Audio rate</span>
+        <span class="val" id="rate" style="font-size:15px">measuring…</span>
       </div>
       <div class="row">
         <span class="row-label">Battery</span>
@@ -311,6 +316,13 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
       // Connection state is already implied by the masthead, which cannot read
       // "listening · glasses" through glasses that are not connected.
       el('battery').textContent = device.battery === null ? '--' : `${device.battery}%`
+    },
+
+    setSampleRate(rate) {
+      // Nominal is 16 kHz. A path running at a different rate shifts every
+      // reading by that ratio, which is what this exists to expose.
+      el('rate').textContent =
+        rate === null ? 'measuring…' : `${Math.round(rate)} Hz`
     },
 
     setMic(mic) {

@@ -9,7 +9,13 @@
 
 import { detectPitch, rmsOf, WINDOW_SIZE } from './audio/pitch'
 import { midiToFreq } from './tuning/notes'
-import { AudioRingBuffer, PitchSmoother, SAMPLE_RATE, decodePcm } from './audio/stream'
+import {
+  AudioRingBuffer,
+  PitchSmoother,
+  SAMPLE_RATE,
+  SampleRateMeter,
+  decodePcm,
+} from './audio/stream'
 import {
   DEFAULT_TUNING,
   centsForString,
@@ -117,6 +123,7 @@ export class Tuner {
 
   private confirmedAt = 0
   private longWindowActive = false
+  private readonly rateMeter = new SampleRateMeter()
 
   // Auto-detect stickiness: a challenger must win several frames in a row.
   private candidateIndex: number | null = null
@@ -174,7 +181,19 @@ export class Tuner {
   /** Feeds one audio event payload. */
   ingest(rawPcm: unknown): void {
     const samples = decodePcm(rawPcm)
-    if (samples.length) this.ring.push(samples)
+    if (!samples.length) return
+    this.ring.push(samples)
+    this.rateMeter.add(samples.length, Date.now())
+  }
+
+  /** Measured arrival rate of audio, or null before it settles. */
+  measuredSampleRate(now: number): number | null {
+    return this.rateMeter.rate(now)
+  }
+
+  /** Restarts the rate measurement, for a change of microphone. */
+  resetRateMeter(now: number): void {
+    this.rateMeter.reset(now)
   }
 
   setPhase(phase: TunerPhase): void {
@@ -469,5 +488,6 @@ export class Tuner {
   /** Called when the mic is (re)started, so idle timing starts fresh. */
   markActive(now: number): void {
     this.lastSoundAt = now
+    this.rateMeter.reset(now)
   }
 }
