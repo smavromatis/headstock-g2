@@ -1,5 +1,5 @@
 /**
- * Tuneful - a classical guitar tuner for Even Realities G2.
+ * Headstock - a classical guitar tuner for Even Realities G2.
  *
  * Once running the app needs no phone interaction; the phone holds settings and
  * status, or becomes the tuner itself when the phone mic is selected.
@@ -66,7 +66,7 @@ let backgrounded = false
 
 /** Safety net, in case cancelling the dialog reports nothing at all. */
 const EXIT_DIALOG_TIMEOUT_MS = 20000
-const SETTINGS_KEY = 'tuneful.settings.v1'
+const SETTINGS_KEY = 'headstock.settings.v1'
 
 const tuner = new Tuner()
 const queue = new BridgeQueue()
@@ -153,7 +153,7 @@ async function setUpGlasses(): Promise<boolean> {
     const detail = formatEvenHubPageContainerValidationError(
       validation as Parameters<typeof formatEvenHubPageContainerValidationError>[0],
     )
-    console.error('TUNEFUL_PAGE_INVALID', JSON.stringify(validation), detail)
+    console.error('HEADSTOCK_PAGE_INVALID', JSON.stringify(validation), detail)
     return false
   }
 
@@ -167,7 +167,7 @@ async function setUpGlasses(): Promise<boolean> {
   }
 
   if (result !== StartUpPageCreateResult.success) {
-    console.warn('TUNEFUL_STARTUP_RESULT', result)
+    console.warn('HEADSTOCK_STARTUP_RESULT', result)
     // `invalid` here usually means the host still holds a page from a previous
     // run, not a bad layout - the SDK already validated it. Happens on every
     // hot reload. Rebuild is the way back in.
@@ -175,7 +175,7 @@ async function setUpGlasses(): Promise<boolean> {
       result === StartUpPageCreateResult.invalid &&
       (await bridge.rebuildPageContainer(GlassesRenderer.rebuildPage(view)).catch(() => false))
     if (!recovered) return false
-    console.log('TUNEFUL_RECOVERED_VIA_REBUILD')
+    console.log('HEADSTOCK_RECOVERED_VIA_REBUILD')
   }
 
   renderer = new GlassesRenderer(bridge, queue)
@@ -493,23 +493,23 @@ function installDevHarness(): void {
   }
 
   const win = window as unknown as Record<string, unknown>
-  win.__tuneful = {
+  win.__headstock = {
     play,
     string(index: number, cents = 0) {
       const s = tuner.currentTuning.strings[index]
       play(midiToFreq(s.midi, tuner.settings.a4) * Math.pow(2, cents / 1200))
     },
   }
-  console.log('TUNEFUL_DEV_READY')
+  console.log('HEADSTOCK_DEV_READY')
 
   if (inDemoMode()) {
     const pump = () => {
       const st = DEMO_STATES[demoIndex]
-      ;(win.__tuneful as { string(i: number, c: number): void }).string(st.index, st.cents)
+      ;(win.__headstock as { string(i: number, c: number): void }).string(st.index, st.cents)
     }
     pump()
     demoTimer = setInterval(pump, 120)
-    console.log(`TUNEFUL_DEMO ${demoIndex} ${DEMO_STATES[demoIndex].label}`)
+    console.log(`HEADSTOCK_DEMO ${demoIndex} ${DEMO_STATES[demoIndex].label}`)
   }
 }
 
@@ -517,7 +517,7 @@ function demoStep(direction: 1 | -1): void {
   demoIndex = (demoIndex + direction + DEMO_STATES.length) % DEMO_STATES.length
   tuner.reset()
   tuner.clearSession()
-  console.log(`TUNEFUL_DEMO ${demoIndex} ${DEMO_STATES[demoIndex].label}`)
+  console.log(`HEADSTOCK_DEMO ${demoIndex} ${DEMO_STATES[demoIndex].label}`)
 }
 
 // --- Teardown ------------------------------------------------------------
@@ -548,6 +548,6 @@ function cleanup(): void {
 void main().catch((err) => {
   phone?.setStatus({
     connection: 'error',
-    message: `Tuneful could not start: ${err instanceof Error ? err.message : String(err)}`,
+    message: `Headstock could not start: ${err instanceof Error ? err.message : String(err)}`,
   })
 })

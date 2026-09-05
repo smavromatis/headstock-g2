@@ -34,7 +34,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
 
   root.innerHTML = `
     <div class="top">
-      <div class="mark">Tuneful</div>
+      <div class="mark">Headstock</div>
       <div class="state" id="state">connecting</div>
     </div>
 

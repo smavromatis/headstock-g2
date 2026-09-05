@@ -300,7 +300,7 @@ export class GlassesRenderer {
 
   private standbyRows(): RowSpec[] {
     return [
-      [CONTAINERS.header, padBetween('TUNEFUL', 'PHONE', ROW_W), 2],
+      [CONTAINERS.header, padBetween('HEADSTOCK', 'PHONE', ROW_W), 2],
       [CONTAINERS.note, renderBlockText('- -'), 2],
       [CONTAINERS.scale, buildScaleRow(false), 1],
       [CONTAINERS.needle, '·'.repeat(NEEDLE_DOTS), 1],

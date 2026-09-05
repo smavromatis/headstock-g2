@@ -1,4 +1,4 @@
-# Tuneful
+# Headstock
 
 A tuner for classical guitar that runs on Even Realities G2 glasses.
 
@@ -6,7 +6,7 @@ The glasses show the note, a needle, and which way to turn the peg. The phone
 holds settings, or becomes the tuner itself if you pick the phone microphone.
 
 Before submitting to the Even Hub store, set `package_id` in `app.json` (it is
-the placeholder `com.example.tuneful`) and `author` in `package.json`. The
+the placeholder `com.example.headstock`) and `author` in `package.json`. The
 package id is permanent and follows reverse-domain convention, so use a domain
 you own.
 
@@ -30,7 +30,7 @@ Checks:
 
 To package:
 
-    npm run pack           # produces tuneful.ehpk
+    npm run pack           # produces headstock.ehpk
 
 ## Tunings
 
