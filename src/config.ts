@@ -74,6 +74,15 @@ export const METER_HALF_PX = 240
 export const METER_INNER_CENTS = 4.5
 export const METER_INNER_PX = 120
 
+/**
+ * Consecutive frames another string must win before auto-detect switches to it.
+ *
+ * Someone playing nearby made a third of frames name the wrong string. This
+ * only delays the label, never the detection, and the counter is unconditional,
+ * so a genuine string change always lands within this many frames.
+ */
+export const STRING_SWITCH_FRAMES = 3
+
 /** Needle must move this many 5px dots before it is redrawn. */
 export const NEEDLE_HYSTERESIS_DOTS = 2
 

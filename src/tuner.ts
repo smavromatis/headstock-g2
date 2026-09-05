@@ -36,6 +36,7 @@ import {
   NOISE_FALL,
   READING_HOLD_MS,
   SMOOTH_ALPHA_FAR,
+  STRING_SWITCH_FRAMES,
   SMOOTH_ALPHA_NEAR,
   STEADY_WITHIN_CENTS,
 } from './config'
@@ -114,6 +115,10 @@ export class Tuner {
   private shownFreqAt = 0
 
   private confirmedAt = 0
+
+  // Auto-detect stickiness: a challenger must win several frames in a row.
+  private candidateIndex: number | null = null
+  private candidateFrames = 0
 
   // Adaptive noise gate, tracking the room rather than a fixed threshold.
   private noiseFloor = MIN_GATE
@@ -277,15 +282,17 @@ export class Tuner {
   }
 
   /**
-   * Frequency window to search once a string is expected. Three semitones
-   * either side covers anything worth calling by that string's name.
+   * Frequency window to search, but only when the user has locked a string.
+   *
+   * Never derived from the last detection. Doing that fed back on itself: a
+   * stale index narrowed the search around the wrong string, a harmonic inside
+   * that window scored a detection, the detection refreshed the staleness
+   * timer, and the window never widened again. Measured as a permanent
+   * failure to detect two of ten string changes, and 1.6s on the rest.
    */
   private searchRange(): { fMin?: number; fMax?: number } {
-    const target =
-      this.lockedString ??
-      (this.lastStringIndex !== null ? this.tuning.strings[this.lastStringIndex] : null)
-    if (!target) return {}
-    const centre = midiToFreq(target.midi, this.settings.a4)
+    if (!this.lockedString) return {}
+    const centre = midiToFreq(this.lockedString.midi, this.settings.a4)
     return { fMin: centre * Math.pow(2, -0.25), fMax: centre * Math.pow(2, 0.25) }
   }
 
@@ -300,8 +307,33 @@ export class Tuner {
       this.offScale = false
     } else {
       const m = matchString(this.lastFreq, this.tuning, this.settings.a4)
-      this.lastStringIndex = m.index
-      this.currentCents = m.cents
+
+      // A challenger must win several consecutive frames before the label
+      // switches, so a neighbour bleeding in cannot flip it frame to frame.
+      //
+      // Unconditional: an interfering string produces a genuinely distant
+      // pitch, so "is this plausibly still the same string" cannot tell
+      // interference from a real change. The cost is a few frames of latency
+      // on every switch. Detection is never restricted, and the counter always
+      // completes, so this cannot lock in.
+      const current = this.lastStringIndex
+      if (current === null || m.index === current) {
+        this.candidateIndex = null
+        this.candidateFrames = 0
+        this.lastStringIndex = m.index
+      } else {
+        this.candidateFrames = m.index === this.candidateIndex ? this.candidateFrames + 1 : 1
+        this.candidateIndex = m.index
+        if (this.candidateFrames >= STRING_SWITCH_FRAMES) {
+          this.lastStringIndex = m.index
+          this.candidateIndex = null
+          this.candidateFrames = 0
+        }
+      }
+
+      // Cents always measured against the string actually shown.
+      const shown = this.tuning.strings[this.lastStringIndex ?? m.index]
+      this.currentCents = centsForString(this.lastFreq, shown, this.settings.a4)
       this.offScale = !m.inRange
     }
   }
@@ -405,6 +437,8 @@ export class Tuner {
   }
 
   reset(): void {
+    this.candidateIndex = null
+    this.candidateFrames = 0
     this.ring.clear()
     this.smoother.reset()
     this.shownFreq = null

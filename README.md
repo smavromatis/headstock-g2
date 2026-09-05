@@ -24,8 +24,11 @@ swipe gestures.
 
 Checks:
 
-    npm run check:detection   # accuracy, drift, and the noise gate
+    npm run check             # everything below
     npm run check:glyphs      # every glyph exists in the firmware font
+    npm run check:layout      # no row overflows, needle never jumps
+    npm run check:detection   # accuracy, drift, and the noise gate
+    npm run check:robustness  # long sessions, noisy rooms, string switching
 
 To package:
 
@@ -71,10 +74,20 @@ of error.
 `src/audio/pitch.ts` runs YIN over a 4096-sample window for an octave-safe
 period, then refines it from the phase advance between two overlapping windows.
 Within 8 cents of the target the window doubles to 512ms, halving estimate
-variance where precision matters. Once a string is identified the search is
-restricted to three semitones around it, and frames taken while the level is
-falling steeply are skipped, since a decaying string's pitch is genuinely
-moving.
+variance where precision matters. When a string is locked the search is restricted to three semitones around it,
+and frames taken while the level is falling steeply are skipped, since a
+decaying string's pitch is genuinely moving.
+
+The search is never narrowed from the last detection. Doing that fed back on
+itself: a stale index narrowed the window around the wrong string, a harmonic
+inside it kept the detection fresh, and the window never widened. Two of ten
+string changes were then never detected at all, and the rest took 1.6s.
+`check:robustness` covers this.
+
+In auto mode the label only switches after another string wins three
+consecutive frames, so an instrument playing nearby cannot flip it frame to
+frame. Strong interference still confuses auto-detect; locking a string is
+immune, since it rejects anything outside its own window.
 The refinement is not optional: YIN alone reads 4.2 cents sharp on a nylon low
 E, whose upper partials sit above exact harmonics and pull the period with them.
 
