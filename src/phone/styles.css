@@ -114,6 +114,14 @@ body {
 
 .action[data-tuned='true'] { color: var(--ok); }
 
+.freq {
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 4px;
+  min-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- meter ------------------------------------------------------------- */
 
 .meter {

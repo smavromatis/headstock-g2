@@ -45,6 +45,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
       <div class="deviation">
         <div class="cents" id="cents" data-idle="true">&nbsp;</div>
         <div class="action" id="action"></div>
+        <div class="freq" id="freq"></div>
       </div>
     </div>
 
@@ -107,6 +108,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   const noteEl = el('note')
   const centsEl = el('cents')
   const actionEl = el('action')
+  const freqEl = el('freq')
   const needleEl = el('needle')
   const meterEl = el('meter')
   const stateEl = el('state')
@@ -255,6 +257,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
                 : ''
         needleEl.dataset.idle = 'true'
         needleEl.dataset.tuned = 'false'
+        freqEl.textContent = ''
         paintState()
         return
       }
@@ -281,6 +284,11 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
             : 'tighten'
 
       // Same expanded-centre curve as the glasses, so both agree.
+      // Shown always, not only when in tune: comparing this figure between the
+      // two microphones is the only way to tell a real pitch difference from a
+      // sample-rate difference in one of the host's audio paths.
+      freqEl.textContent = view.freq === null ? '' : `${view.freq.toFixed(2)} Hz`
+
       const pct = clamp(50 + (centsToOffsetPx(cents) / METER_HALF_PX) * 50, 0, 100)
       needleEl.style.left = `${pct}%`
       needleEl.dataset.idle = 'false'
