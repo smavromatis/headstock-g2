@@ -144,6 +144,57 @@ console.log('\nnoise gate adapts to the room')
   }
 }
 
+console.log('\nother strings ringing sympathetically')
+{
+  // A signal periodic at E4 is also periodic at E2, since E4 is its fourth
+  // harmonic, and A2's third harmonic is 330 Hz which is E4. So when other
+  // strings ring, a period-finder can legitimately report the lower one.
+  for (const target of [0, 1, 5]) {
+    const tuner = new Tuner()
+    const phases = [0, 0, 0]
+    const f0 = midiToFreq(TUNINGS[0].strings[target].midi, 440)
+    const others = [(target + 1) % 6, (target + 3) % 6].map(
+      (i) => midiToFreq(TUNINGS[0].strings[i].midi, 440),
+    )
+    let t = 0
+    let age = 0
+    let correct = 0
+    let named = 0
+    for (let f = 0; f < 30; f++) {
+      const b = new Uint8Array(N * 2)
+      const p = [0.35, 0.8, 0.5, 0.35, 0.25]
+      for (let i = 0; i < N; i++) {
+        let v = 0
+        for (let k = 0; k < p.length; k++) v += p[k] * Math.sin(phases[0] * (k + 1))
+        phases[0] += (2 * Math.PI * f0) / SR
+        v *= 0.25 * Math.exp((-0.7 * (age + i)) / SR)
+        others.forEach((fs, n) => {
+          let s2 = 0
+          for (let k = 0; k < 4; k++) s2 += p[k] * Math.sin(phases[n + 1] * (k + 1))
+          phases[n + 1] += (2 * Math.PI * fs) / SR
+          v += 0.3 * 0.25 * Math.exp((-1.1 * (age + i)) / SR) * s2
+        })
+        const q = Math.round(Math.max(-1, Math.min(1, v)) * 32767)
+        b[i * 2] = q & 0xff
+        b[i * 2 + 1] = (q >> 8) & 0xff
+      }
+      age += N
+      t += FRAME_MS
+      tuner.ingest(b)
+      tuner.advance(t)
+      if (f < 10) continue
+      const v = tuner.view()
+      if (v.stringIndex !== null) {
+        named++
+        if (v.stringIndex === target) correct++
+      }
+    }
+    const label = TUNINGS[0].strings[target].label
+    check(`${label} survives 30% sympathetic ringing`, named > 0 && correct === named,
+      `${correct} correct of ${named} named`)
+  }
+}
+
 console.log('\nlocked mode ignores other strings')
 {
   const tuner = new Tuner()
