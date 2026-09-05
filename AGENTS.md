@@ -131,6 +131,15 @@ sustained note drags the gate above its own signal and the tuner goes deaf after
 about fifteen seconds. And auto-detect cannot survive a loud instrument nearby;
 locking a string is the answer, and it rejects anything outside its own window.
 
+## Dependencies
+
+One runtime dependency, `@evenrealities/even_hub_sdk`, which is the only thing
+bundled. Everything else is build-time.
+
+TypeScript is pinned to 5.x because `@evenrealities/evenhub-cli` peer-requires
+`^5`; installing 7 breaks the install. It is a build-time tool and does not
+ship, so the pin costs nothing.
+
 ## Where writing goes
 
 The README is for someone tuning a guitar. Rationale for a change goes in a
