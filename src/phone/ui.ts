@@ -38,7 +38,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     </div>
 
     <div class="reading">
-      <div class="note" id="note" data-idle="true">&mdash;</div>
+      <div class="note" id="note" data-idle="true">--</div>
       <div class="deviation">
         <div class="cents" id="cents" data-idle="true">&nbsp;</div>
         <div class="action" id="action"></div>
@@ -75,7 +75,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
       </div>
       <div class="row">
         <span class="row-label">Battery</span>
-        <span class="val" id="battery" style="font-size:15px">&mdash;</span>
+        <span class="val" id="battery" style="font-size:15px">--</span>
       </div>
     </div>
 
@@ -191,7 +191,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
 
       if (!hasReading) {
         noteEl.dataset.idle = 'true'
-        noteEl.innerHTML = view.offScale ? '?' : '&mdash;'
+        noteEl.textContent = view.offScale ? '?' : '--'
         centsEl.dataset.idle = 'true'
         centsEl.dataset.tuned = 'false'
         centsEl.innerHTML = '&nbsp;'
@@ -252,7 +252,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     setDevice(device) {
       // Connection state is already implied by the masthead, which cannot read
       // "listening · glasses" through glasses that are not connected.
-      el('battery').textContent = device.battery === null ? '—' : `${device.battery}%`
+      el('battery').textContent = device.battery === null ? '--' : `${device.battery}%`
     },
 
     setMic(mic) {

@@ -71,7 +71,7 @@ async function main(): Promise<void> {
     micSource = AudioInputSource.Phone
     phone?.setStatus({
       connection: 'degraded',
-      message: 'Glasses unavailable — tuning on the phone.',
+      message: 'Glasses unavailable. Tuning on the phone.',
     })
   }
 
