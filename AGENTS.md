@@ -106,6 +106,19 @@ character to any string the glasses render and rerun `npm run gen:metrics`;
 - Text that exactly fills a container wraps to an invisible second line. Padding
   is measured against the composed string, kerning included, because measuring
   the halves separately was enough to lose a trailing word.
+- The phone microphone path reads flat. Measured on one iPhone: a well-tuned
+  low E read 82.10 Hz where the glasses read 82.40, a consistent 0.37% across
+  strings. The host pads that stream to hold a nominal 16 kHz while capture
+  runs slightly slow, so the content is time-stretched: reproduced exactly in
+  simulation by repeating one sample in every 270, which yields 82.09 Hz.
+  The arrival rate still measures 16 kHz, so the padding is invisible to a
+  rate meter, and the repeated-sample signature disappears under realistic
+  noise, so it cannot be detected automatically either. Both were tested.
+  The fix is the per-microphone calibration on the phone, measured against a
+  source known to be right. Ruled out on the way: an iPhone high-pass roll-off
+  (moves the reading 0.7 cents sharp), a sample-rate mismatch (measured at
+  nominal), low-frequency rumble (within 2 cents), and dropped buffers (biases
+  sharp, not flat).
 - The simulator has no usable audio input, so it can only verify layout.
   `onDeviceStatusChanged` never fires there either.
 
