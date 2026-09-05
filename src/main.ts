@@ -181,6 +181,7 @@ async function main(): Promise<void> {
   window.addEventListener('beforeunload', cleanup)
 
   installDevHarness()
+  void probeWebAudio()
 }
 
 /** Returns true when the glasses page is up and can be rendered to. */
@@ -457,6 +458,39 @@ function closeExitDialog(): void {
   if (!exitDialogOpen) return
   exitDialogOpen = false
   renderer?.invalidate()
+}
+
+/**
+ * Checks whether the WebView will give us the microphone directly.
+ *
+ * The host converts the phone microphone to 16 kHz itself and pads the stream
+ * to hold that rate, which stretches the audio and makes every reading flat.
+ * Capturing through the WebView instead would come straight from the device at
+ * its own rate, with AudioContext reporting exactly what that rate is, so
+ * there would be nothing to guess and nothing to calibrate.
+ *
+ * Only a probe: it reports what is possible and releases the microphone again.
+ */
+async function probeWebAudio(): Promise<void> {
+  const media = navigator.mediaDevices
+  if (!media?.getUserMedia) {
+    phone?.setWebAudio('not supported')
+    return
+  }
+  try {
+    const stream = await media.getUserMedia({ audio: true })
+    const ctx = new AudioContext()
+    const rate = ctx.sampleRate
+    const track = stream.getAudioTracks()[0]
+    const settings = track?.getSettings?.() ?? {}
+    phone?.setWebAudio(`${Math.round(settings.sampleRate ?? rate)} Hz`)
+    track?.stop()
+    void ctx.close()
+  } catch (err) {
+    phone?.setWebAudio(
+      `blocked (${err instanceof Error ? err.name : 'unknown'})`,
+    )
+  }
 }
 
 // --- Settings persistence -----------------------------------------------

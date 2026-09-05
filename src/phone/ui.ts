@@ -27,6 +27,7 @@ export interface PhoneUi {
   setDevice(device: { battery: number | null }): void
   setMic(mic: { active: boolean; source: AudioInputSource }): void
   setSampleRate(rate: number | null): void
+  setWebAudio(status: string): void
   setCalibration(offsetCents: number, result: 'ok' | 'no-reading' | 'too-far'): void
   setSurface(surface: Surface): void
 }
@@ -105,6 +106,10 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
         Play a string you know is in tune, then Set. Corrects this microphone
         only, if it reads differently from the other one.
       </p>
+      <div class="row">
+        <span class="row-label">WebView mic</span>
+        <span class="val" id="webaudio" style="font-size:15px">checking…</span>
+      </div>
       <div class="row">
         <span class="row-label">Audio rate</span>
         <span class="val" id="rate" style="font-size:15px">measuring…</span>
@@ -345,6 +350,10 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
           : result === 'too-far'
             ? 'That string is too far out to calibrate against. Tune it first.'
             : 'Play a string you know is in tune, then Set. Corrects this microphone only, if it reads differently from the other one.'
+    },
+
+    setWebAudio(status) {
+      el('webaudio').textContent = status
     },
 
     setSampleRate(rate) {
