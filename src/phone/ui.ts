@@ -11,7 +11,6 @@ import './styles.css'
 
 export interface PhoneUiHandlers {
   onA4Change(a4: number): void
-  onCalibrationChange(cents: number): void
   onMicSourceChange(source: AudioInputSource): void
   onResetSession(): void
 }
@@ -49,7 +48,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     <div class="meter" id="meter">
       <div class="needle" id="needle" data-idle="true" style="left:50%"></div>
     </div>
-    <div class="scale"><span id="scale-lo">&minus;50</span><span id="scale-mid">0</span><span id="scale-hi">+50</span></div>
+    <div class="scale"><span id="scale-lo">&minus;50</span><span>0</span><span id="scale-hi">+50</span></div>
 
     <div class="session">
       <div class="pips" id="pips"></div>
@@ -65,14 +64,6 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
           <button class="step" type="button" id="a4-down" aria-label="Lower reference pitch">&minus;</button>
           <span class="val" id="a4">440</span>
           <button class="step" type="button" id="a4-up" aria-label="Raise reference pitch">+</button>
-        </div>
-      </div>
-      <div class="row">
-        <span class="row-label">Calibration</span>
-        <div class="row-control">
-          <button class="step" type="button" id="cal-down" aria-label="Lower calibration">&minus;</button>
-          <span class="val" id="cal">0.0</span>
-          <button class="step" type="button" id="cal-up" aria-label="Raise calibration">+</button>
         </div>
       </div>
       <div class="row">
@@ -108,7 +99,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   const scaleLo = el('scale-lo')
   const scaleHi = el('scale-hi')
 
-  let settings: TunerSettings = { a4: 440, calibration: 0 }
+  let settings: TunerSettings = { a4: 440 }
   let micActive = false
   let micSource: AudioInputSource = AudioInputSource.Glasses
   let currentSurface: Surface = 'glasses'
@@ -136,20 +127,12 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
 
   // --- controls ----------------------------------------------------------
   const applyA4 = (next: number) => {
-    settings = { ...settings, a4: clamp(Math.round(next), A4_MIN, A4_MAX) }
+    settings = { a4: clamp(Math.round(next), A4_MIN, A4_MAX) }
     paintSettings()
     handlers.onA4Change(settings.a4)
   }
   el('a4-down').addEventListener('click', () => applyA4(settings.a4 - 1))
   el('a4-up').addEventListener('click', () => applyA4(settings.a4 + 1))
-
-  const applyCal = (next: number) => {
-    settings = { ...settings, calibration: clamp(round1(next), -50, 50) }
-    paintSettings()
-    handlers.onCalibrationChange(settings.calibration)
-  }
-  el('cal-down').addEventListener('click', () => applyCal(settings.calibration - 0.5))
-  el('cal-up').addEventListener('click', () => applyCal(settings.calibration + 0.5))
 
   const micButtons = Array.from(el('mic').querySelectorAll<HTMLButtonElement>('button'))
   for (const b of micButtons) {
@@ -163,8 +146,6 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
 
   function paintSettings(): void {
     el('a4').textContent = String(settings.a4)
-    const c = settings.calibration
-    el('cal').textContent = `${c > 0 ? '+' : ''}${c.toFixed(1)}`
   }
 
   /** The gesture legend is meaningless when the phone is the tuner. */
@@ -292,8 +273,4 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v))
-}
-
-function round1(v: number): number {
-  return Math.round(v * 10) / 10
 }

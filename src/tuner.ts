@@ -29,11 +29,9 @@ export type Surface = 'glasses' | 'phone'
 
 export interface TunerSettings {
   a4: number
-  /** Cents added to every reading, for calibrating against a known reference. */
-  calibration: number
 }
 
-export const DEFAULT_SETTINGS: TunerSettings = { a4: 440, calibration: 0 }
+export const DEFAULT_SETTINGS: TunerSettings = { a4: 440 }
 
 export interface TunerView {
   phase: TunerPhase
@@ -159,9 +157,7 @@ export class Tuner {
         const result = detectPitch(window, SAMPLE_RATE)
         if (result) {
           const smoothed = this.smoother.push(result.freq)
-          // Calibration shifts the measurement, not the target, so the
-          // displayed Hz stays what the mic heard.
-          this.lastFreq = smoothed * Math.pow(2, this.settings.calibration / 1200)
+          this.lastFreq = smoothed
           this.lastDetectionAt = now
         }
       }

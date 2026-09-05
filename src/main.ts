@@ -48,11 +48,6 @@ async function main(): Promise<void> {
       persistSettings()
       paint()
     },
-    onCalibrationChange: (cents) => {
-      tuner.settings.calibration = cents
-      persistSettings()
-      paint()
-    },
     onMicSourceChange: (source) => {
       micSource = source
       // The phone mic makes the phone the tuner; the glasses stand down.
@@ -307,10 +302,7 @@ async function loadSettings(): Promise<void> {
     const raw = await bridge.getLocalStorage(SETTINGS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<TunerSettings>
-      tuner.settings = {
-        a4: clamp(parsed.a4 ?? DEFAULT_SETTINGS.a4, 415, 445),
-        calibration: clamp(parsed.calibration ?? DEFAULT_SETTINGS.calibration, -50, 50),
-      }
+      tuner.settings = { a4: clamp(parsed.a4 ?? DEFAULT_SETTINGS.a4, 415, 445) }
     }
   } catch {
     tuner.settings = { ...DEFAULT_SETTINGS }

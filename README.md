@@ -33,8 +33,9 @@ Frequencies come from the A4 reference at run time, so 442 Hz and 415 Hz stay
 exact. At A4 = 440 the open strings are 82.407, 110.000, 146.832, 195.998,
 246.942 and 329.628 Hz.
 
-Everything is referenced to the glasses' 16 kHz sample clock; if that clock is
-off, readings shift with it. The phone's calibration setting corrects for this.
+Everything is referenced to the glasses' 16 kHz sample clock. Crystal tolerance
+is around 50 ppm, which is 0.09 cents, so the clock is not a practical source
+of error.
 
 ## Pitch detection
 
