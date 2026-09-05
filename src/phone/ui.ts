@@ -1,35 +1,27 @@
 /**
- * Phone surface. With the glasses mic it is a settings and status panel; with
- * the phone mic the phone is the tuner and the reading takes the upper screen.
+ * The phone screen: a settings and status panel, plus a quiet mirror of the
+ * reading so you can confirm the pipeline before pocketing it.
  */
 
-import { AudioInputSource } from '@evenrealities/even_hub_sdk'
 import { TUNINGS } from '../tuning/notes'
 import { IN_TUNE_CENTS, METER_HALF_PX } from '../config'
 import { centsToOffsetPx } from '../glasses/display'
-import type { TunerSettings, TunerView, Surface } from '../tuner'
+import type { TunerSettings, TunerView } from '../tuner'
 import './styles.css'
 
 export interface PhoneUiHandlers {
   onA4Change(a4: number): void
-  onMicSourceChange(source: AudioInputSource): void
   onResetSession(): void
   onTuningChange(id: string): void
   onCapoChange(semitones: number): void
-  onCalibrate(): void
-  onClearCalibration(): void
 }
 
 export interface PhoneUi {
-  setReading(view: TunerView, surface: Surface): void
+  setReading(view: TunerView): void
   setSettings(settings: TunerSettings): void
   setStatus(status: { connection: 'ok' | 'degraded' | 'error'; message: string }): void
   setDevice(device: { battery: number | null }): void
-  setMic(mic: { active: boolean; source: AudioInputSource }): void
-  setSampleRate(rate: number | null): void
-  setWebAudio(status: string): void
-  setCalibration(offsetCents: number, result: 'ok' | 'no-reading' | 'too-far'): void
-  setSurface(surface: Surface): void
+  setMic(mic: { active: boolean }): void
 }
 
 const A4_MIN = 415
@@ -88,34 +80,6 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
         </div>
       </div>
       <div class="row">
-        <span class="row-label">Listen with</span>
-        <div class="choice" id="mic">
-          <button type="button" data-source="glasses" aria-pressed="true">Glasses</button>
-          <button type="button" data-source="phone" aria-pressed="false">Phone</button>
-        </div>
-      </div>
-      <div class="row">
-        <span class="row-label">Calibration</span>
-        <div class="row-control">
-          <span class="val" id="cal-value" style="font-size:15px">none</span>
-          <button class="preset" type="button" id="cal-set">Set</button>
-          <button class="preset" type="button" id="cal-clear">Clear</button>
-        </div>
-      </div>
-      <p class="hint" id="cal-hint">
-        The phone microphone reads slightly flat, so it starts corrected. Play a
-        string you know is in tune and press Set to measure it yourself, or
-        Clear to remove the correction.
-      </p>
-      <div class="row">
-        <span class="row-label">WebView mic</span>
-        <span class="val" id="webaudio" style="font-size:15px">checking…</span>
-      </div>
-      <div class="row">
-        <span class="row-label">Audio rate</span>
-        <span class="val" id="rate" style="font-size:15px">measuring…</span>
-      </div>
-      <div class="row">
         <span class="row-label">Battery</span>
         <span class="val" id="battery" style="font-size:15px">--</span>
       </div>
@@ -139,12 +103,9 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   const meterEl = el('meter')
   const stateEl = el('state')
   const noticeEl = el('notice')
-  const legendEl = el('legend')
 
-  let settings: TunerSettings = { a4: 440, tuningId: TUNINGS[0].id, capo: 0, offsets: {} }
+  let settings: TunerSettings = { a4: 440, tuningId: TUNINGS[0].id, capo: 0 }
   let micActive = false
-  let micSource: AudioInputSource = AudioInputSource.Glasses
-  let currentSurface: Surface = 'glasses'
 
   // --- meter ticks (drawn once) -----------------------------------------
   // Breakpoints of the expanded-centre curve, plus the in-tune band.
@@ -208,21 +169,8 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     paintSettings()
     handlers.onCapoChange(settings.capo)
   }
-  el('cal-set').addEventListener('click', () => handlers.onCalibrate())
-  el('cal-clear').addEventListener('click', () => handlers.onClearCalibration())
-
   el('capo-down').addEventListener('click', () => applyCapo(settings.capo - 1))
   el('capo-up').addEventListener('click', () => applyCapo(settings.capo + 1))
-
-  const micButtons = Array.from(el('mic').querySelectorAll<HTMLButtonElement>('button'))
-  for (const b of micButtons) {
-    b.addEventListener('click', () => {
-      const source =
-        b.dataset.source === 'phone' ? AudioInputSource.Phone : AudioInputSource.Glasses
-      for (const other of micButtons) other.setAttribute('aria-pressed', String(other === b))
-      handlers.onMicSourceChange(source)
-    })
-  }
 
   function paintSettings(): void {
     el('a4').textContent = String(settings.a4)
@@ -232,20 +180,13 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     }
   }
 
-  /** The gesture legend is meaningless when the phone is the tuner. */
-  function paintSurface(): void {
-    legendEl.style.display = currentSurface === 'phone' ? 'none' : ''
-  }
-
   function paintState(): void {
     if (!micActive) {
       stateEl.textContent = 'not listening'
       stateEl.dataset.live = 'false'
       return
     }
-    // Names the microphone: that is what you point the guitar at.
-    stateEl.textContent =
-      micSource === AudioInputSource.Phone ? 'listening · phone' : 'listening · glasses'
+    stateEl.textContent = 'listening'
     stateEl.dataset.live = 'true'
   }
 
@@ -253,11 +194,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   paintSettings()
 
   return {
-    setReading(view, surface) {
-      if (surface !== currentSurface) {
-        currentSurface = surface
-        paintSurface()
-      }
+    setReading(view) {
 
       // Labels must follow the auto-zoom, or the needle changes meaning.
       buildPips(view.tuning.strings)
@@ -342,39 +279,11 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
       el('battery').textContent = device.battery === null ? '--' : `${device.battery}%`
     },
 
-    setCalibration(offsetCents, result) {
-      el('cal-value').textContent =
-        offsetCents === 0 ? 'none' : `${offsetCents > 0 ? '+' : '−'}${Math.abs(offsetCents).toFixed(1)}`
-      el('cal-hint').textContent =
-        result === 'no-reading'
-          ? 'Play a string first, then Set.'
-          : result === 'too-far'
-            ? 'That string is too far out to calibrate against. Tune it first.'
-            : 'The phone microphone reads slightly flat, so it starts corrected. Play a string you know is in tune and press Set to measure it yourself, or Clear to remove the correction.'
-    },
-
-    setWebAudio(status) {
-      el('webaudio').textContent = status
-    },
-
-    setSampleRate(rate) {
-      // Nominal is 16 kHz. A path running at a different rate shifts every
-      // reading by that ratio, which is what this exists to expose.
-      el('rate').textContent =
-        rate === null ? 'measuring…' : `${Math.round(rate)} Hz`
-    },
-
     setMic(mic) {
       micActive = mic.active
-      micSource = mic.source
       paintState()
     },
 
-    setSurface(surface) {
-      currentSurface = surface
-      paintSurface()
-      paintState()
-    },
   }
 }
 

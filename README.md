@@ -43,10 +43,8 @@ ensemble playing and 415 for baroque are both exact.
 
 ## The phone
 
-With the glasses microphone the phone is a settings panel you can put away.
-Choose the phone microphone and the phone becomes the tuner instead, with the
-glasses standing down. If the glasses are unavailable the app falls back to the
-phone rather than failing.
+The phone holds the settings: tuning, capo and reference pitch. Set them once
+and put it away. Headstock needs the glasses to run.
 
 ## Accuracy
 

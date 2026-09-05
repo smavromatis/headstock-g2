@@ -267,7 +267,7 @@ export class GlassesRenderer {
   private lastNeedleDot: number | null = null
   private lastSent = new Map<string, string>()
   private lastColor = new Map<string, number>()
-  private pending: { kind: 'view'; view: TunerView } | { kind: 'standby' } | null = null
+  private pending: TunerView | null = null
   private flushing = false
 
   private readonly bridge: EvenAppBridge
@@ -315,20 +315,7 @@ export class GlassesRenderer {
   }
 
   render(view: TunerView): void {
-    this.pending = { kind: 'view', view }
-    void this.flush()
-  }
-
-  /**
-   * Blanks the glasses while the phone is the tuner.
-   *
-   * The display is not being used, so it shows nothing at all rather than a
-   * card: unlit pixels are transparent on this hardware, so an empty page is
-   * the closest thing to switching the display off. The event-capture row
-   * keeps a single space, since an empty capture container is not valid.
-   */
-  renderStandby(): void {
-    this.pending = { kind: 'standby' }
+    this.pending = view
     void this.flush()
   }
 
@@ -345,23 +332,12 @@ export class GlassesRenderer {
     this.render(view)
   }
 
-  private standbyRows(): RowSpec[] {
-    return [
-      [CONTAINERS.header, ' ', 0],
-      [CONTAINERS.note, ' ', 0],
-      [CONTAINERS.scale, ' ', 0],
-      [CONTAINERS.needle, ' ', 0],
-      [CONTAINERS.readout, ' ', 0],
-      [CONTAINERS.strings, ' ', 0],
-    ]
-  }
-
   /**
    * Needle position with hysteresis.
    *
    * A real string wanders a cent or two while it decays, which was enough to
-   * hop the needle between adjacent cells continuously. It now has to move
-   * more than one dot before it is redrawn, which removes the flicker without
+   * hop the needle between adjacent cells continuously. It has to move more
+   * than one dot before it is redrawn, which removes the flicker without
    * capping how far it can travel.
    */
   private steadyNeedleDot(view: TunerView): number | undefined {
@@ -391,14 +367,8 @@ export class GlassesRenderer {
     this.flushing = true
     try {
       while (this.pending) {
-        const job = this.pending
+        const view = this.pending
         this.pending = null
-
-        if (job.kind === 'standby') {
-          await this.sendRows(this.standbyRows())
-          continue
-        }
-        const view = job.view
 
         const near = view.cents !== null && Math.abs(view.cents) <= NEAR_CENTS
 

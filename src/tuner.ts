@@ -9,13 +9,7 @@
 
 import { detectPitch, rmsOf, WINDOW_SIZE } from './audio/pitch'
 import { midiToFreq } from './tuning/notes'
-import {
-  AudioRingBuffer,
-  PitchSmoother,
-  SAMPLE_RATE,
-  SampleRateMeter,
-  decodePcm,
-} from './audio/stream'
+import { AudioRingBuffer, PitchSmoother, SAMPLE_RATE, decodePcm } from './audio/stream'
 import {
   DEFAULT_TUNING,
   centsForString,
@@ -53,36 +47,17 @@ const LONG_WINDOW_SIZE = WINDOW_SIZE * 2
 
 export type TunerPhase = 'starting' | 'listening' | 'reading' | 'idle' | 'micError'
 
-/** Where the tuner is currently being driven from. */
-export type Surface = 'glasses' | 'phone'
-
 export interface TunerSettings {
   a4: number
   tuningId: string
   /** Capo position in semitones; 0 is no capo. */
   capo: number
-  /**
-   * Per-microphone correction in cents.
-   *
-   * The host resamples each microphone itself and the two paths need not agree:
-   * measured on one phone, the phone path read 0.37% low while delivering
-   * samples at the nominal rate, so the content was time-stretched somewhere
-   * the app cannot see. Measured against a source known to be right rather
-   * than hardcoded, since this is a property of a host build, not of a model.
-   */
-  offsets: Record<string, number>
 }
 
 export const DEFAULT_SETTINGS: TunerSettings = {
   a4: 440,
   tuningId: DEFAULT_TUNING.id,
   capo: 0,
-  // The host pads the phone stream to hold a nominal 16 kHz while capture runs
-  // slow, stretching the audio so every reading lands about 0.4% flat. The
-  // conversion is the host's own code, so this should be the same on any
-  // phone, but it is measured on one device and one app build. Set re-measures
-  // it, Clear removes it.
-  offsets: { phone: 7.8 },
 }
 
 export interface TunerView {
@@ -139,20 +114,13 @@ export class Tuner {
 
   private confirmedAt = 0
   private longWindowActive = false
-  private readonly rateMeter = new SampleRateMeter()
 
-  /** Key into `settings.offsets` for the microphone in use. */
-  private source = 'glasses'
-
-  /** Recent readings, so calibration averages rather than sampling an instant. */
-  private readonly recentCents: number[] = []
+  // Adaptive noise gate, tracking the room rather than a fixed threshold.
+  private noiseFloor = MIN_GATE
 
   // Auto-detect stickiness: a challenger must win several frames in a row.
   private candidateIndex: number | null = null
   private candidateFrames = 0
-
-  // Adaptive noise gate, tracking the room rather than a fixed threshold.
-  private noiseFloor = MIN_GATE
 
   settings: TunerSettings = { ...DEFAULT_SETTINGS }
 
@@ -205,51 +173,6 @@ export class Tuner {
     const samples = decodePcm(rawPcm)
     if (!samples.length) return
     this.ring.push(samples)
-    this.rateMeter.add(samples.length, Date.now())
-  }
-
-  /** Measured arrival rate of audio, or null before it settles. */
-  measuredSampleRate(now: number): number | null {
-    return this.rateMeter.rate(now)
-  }
-
-  /** Restarts the rate measurement, for a change of microphone. */
-  resetRateMeter(now: number): void {
-    this.rateMeter.reset(now)
-  }
-
-  setSource(source: string): void {
-    this.source = source
-    this.reset()
-  }
-
-  get offset(): number {
-    return this.settings.offsets[this.source] ?? 0
-  }
-
-  /**
-   * Corrects the current microphone so the reading lands on the target.
-   *
-   * Only meaningful on a string already known to be in tune, so it refuses
-   * when the reading is far out: calibrating against a flat string would bake
-   * that error in permanently.
-   */
-  calibrate(): 'ok' | 'no-reading' | 'too-far' {
-    // The median of the last couple of seconds, not the instant of the tap:
-    // the offset wanders by a cent or so, and a single sample could land
-    // anywhere in that spread and be stored permanently.
-    if (this.recentCents.length < 8 || this.offScale) return 'no-reading'
-    const sorted = [...this.recentCents].sort((a, b) => a - b)
-    const c = sorted[sorted.length >> 1]
-    if (Math.abs(c) > 25) return 'too-far'
-    this.settings.offsets = { ...this.settings.offsets, [this.source]: this.offset - c }
-    this.reset()
-    return 'ok'
-  }
-
-  clearCalibration(): void {
-    this.settings.offsets = { ...this.settings.offsets, [this.source]: 0 }
-    this.reset()
   }
 
   setPhase(phase: TunerPhase): void {
@@ -339,11 +262,7 @@ export class Tuner {
           const near =
             this.currentCents !== null && Math.abs(this.currentCents) <= STEADY_WITHIN_CENTS
           const alpha = (near ? SMOOTH_ALPHA_NEAR : SMOOTH_ALPHA_FAR) * result.confidence
-          // The correction belongs to the microphone, so it is applied to the
-          // measurement rather than to the target: the displayed frequency
-          // stays what the string is actually doing.
-          this.lastFreq =
-            this.smoother.push(result.freq, alpha) * Math.pow(2, this.offset / 1200)
+          this.lastFreq = this.smoother.push(result.freq, alpha)
           this.lastDetectionAt = now
         }
       }
@@ -358,11 +277,6 @@ export class Tuner {
     }
 
     this.updateMatch()
-
-    if (this.currentCents !== null && !this.offScale) {
-      this.recentCents.push(this.currentCents)
-      if (this.recentCents.length > 20) this.recentCents.shift()
-    }
 
     this.updateSettle(now)
     this.advanceLock(now)
@@ -536,7 +450,6 @@ export class Tuner {
   }
 
   reset(): void {
-    this.recentCents.length = 0
     this.candidateIndex = null
     this.candidateFrames = 0
     this.longWindowActive = false
@@ -555,6 +468,5 @@ export class Tuner {
   /** Called when the mic is (re)started, so idle timing starts fresh. */
   markActive(now: number): void {
     this.lastSoundAt = now
-    this.rateMeter.reset(now)
   }
 }

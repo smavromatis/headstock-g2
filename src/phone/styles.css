@@ -264,12 +264,6 @@ body {
 
 .step:active { opacity: 1; }
 
-.hint {
-  color: var(--dim);
-  font-size: 12px;
-  margin: 8px 0 14px;
-  line-height: 1.4;
-}
 
 .choice { display: flex; gap: 18px; }
 

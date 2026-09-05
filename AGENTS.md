@@ -106,24 +106,14 @@ character to any string the glasses render and rerun `npm run gen:metrics`;
 - Text that exactly fills a container wraps to an invisible second line. Padding
   is measured against the composed string, kerning included, because measuring
   the halves separately was enough to lose a trailing word.
-- The phone microphone path reads flat. Measured on one iPhone: a well-tuned
-  low E read 82.10 Hz where the glasses read 82.40, a consistent 0.37% across
-  strings. The host pads that stream to hold a nominal 16 kHz while capture
-  runs slightly slow, so the content is time-stretched: reproduced exactly in
-  simulation by repeating one sample in every 270, which yields 82.09 Hz.
-  The arrival rate still measures 16 kHz, so the padding is invisible to a
-  rate meter, and the repeated-sample signature disappears under realistic
-  noise, so it cannot be detected automatically either. Both were tested.
-  Neither route out exists: `audioControl(isOpen, source)` takes no sample
-  rate, and the WebView does not expose `getUserMedia` at all, so the host's
-  padded stream is the only phone audio available. The phone therefore ships
-  with a +7.8 cent default correction, which Set re-measures and Clear removes.
-  Note this establishes only that the two paths differ: whether the glasses are
-  right in absolute terms has not been checked against an external reference,
-  and a tuner uniformly sharp would tune a guitar sharp and call it perfect. Ruled out on the way: an iPhone high-pass roll-off
-  (moves the reading 0.7 cents sharp), a sample-rate mismatch (measured at
-  nominal), low-frequency rumble (within 2 cents), and dropped buffers (biases
-  sharp, not flat).
+- The phone microphone is not used, and `phone-microphone` is not requested.
+  Its path reads about 0.4% flat: the host pads that stream to hold a nominal
+  16 kHz while capture runs slow, so the audio is time-stretched. Reproduced
+  exactly by repeating one sample in every 270. There is no way around it:
+  `audioControl(isOpen, source)` takes no sample rate, and the WebView does not
+  expose `getUserMedia`, so the padded stream is the only phone audio available.
+  Correcting it needs a constant measured per device and app build, which is
+  why the mode was dropped rather than shipped with a guess.
 - The simulator has no usable audio input, so it can only verify layout.
   `onDeviceStatusChanged` never fires there either.
 

@@ -7,39 +7,6 @@
 
 export const SAMPLE_RATE = 16000
 
-/**
- * Measures how many samples actually arrive per second of wall clock.
- *
- * The host reports no sample rate, and the two microphone paths need not use
- * the same one. Assuming 16 kHz for a path running at a different rate shifts
- * every reading by a fixed ratio. Measuring it is device-independent, where a
- * per-phone constant would be guesswork that goes stale.
- *
- * Ignores the first second, since the first buffers arrive in a burst.
- */
-export class SampleRateMeter {
-  private startedAt = 0
-  private samples = 0
-
-  reset(now: number): void {
-    this.startedAt = now
-    this.samples = 0
-  }
-
-  add(count: number, now: number): void {
-    if (this.startedAt === 0) this.startedAt = now
-    if (now - this.startedAt < 1000) return
-    this.samples += count
-  }
-
-  /** Measured rate, or null until there is enough data to be meaningful. */
-  rate(now: number): number | null {
-    const elapsed = now - this.startedAt - 1000
-    if (elapsed < 4000 || this.samples === 0) return null
-    return (this.samples * 1000) / elapsed
-  }
-}
-
 export class AudioRingBuffer {
   private readonly buf: Float32Array
   private write = 0
@@ -100,15 +67,6 @@ export function decodePcm(raw: unknown): Float32Array {
  */
 type ArrayPcmFormat = 'unknown' | 'bytes' | 'samples'
 let arrayFormat: ArrayPcmFormat = 'unknown'
-
-/**
- * Forgets the latched format. Must be called when the microphone source
- * changes: the two sources are separate host paths and need not agree, and a
- * latch made for one would silently mis-decode the other.
- */
-export function resetPcmFormat(): void {
-  arrayFormat = 'unknown'
-}
 
 function decodeNumberArray(raw: number[]): Float32Array {
   if (arrayFormat === 'unknown') {

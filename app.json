@@ -10,10 +10,6 @@
     {
       "name": "g2-microphone",
       "desc": "Listens to your guitar through the glasses microphone array to measure the pitch of each string."
-    },
-    {
-      "name": "phone-microphone",
-      "desc": "Lets you tune using the phone microphone instead of the glasses, for when the glasses are unavailable or you prefer the phone."
     }
   ],
   "supported_languages": [

@@ -19,11 +19,10 @@ import {
   type EvenHubEvent,
 } from '@evenrealities/even_hub_sdk'
 
-import { Tuner, DEFAULT_SETTINGS, type TunerSettings, type Surface } from './tuner'
+import { Tuner, DEFAULT_SETTINGS, type TunerSettings } from './tuner'
 import { GlassesRenderer, tuningIdForMenuItem } from './glasses/display'
 import { BridgeQueue } from './bridge-queue'
 import { MIC_CONTROL_TIMEOUT_MS } from './config'
-import { resetPcmFormat } from './audio/stream'
 import { mountPhoneUi, type PhoneUi } from './phone/ui'
 import { midiToFreq } from './tuning/notes'
 
@@ -83,10 +82,6 @@ let renderer: GlassesRenderer | null = null
 let phone: PhoneUi | null = null
 let frameTimer: ReturnType<typeof setInterval> | null = null
 
-/** Which surface is driving the tuner. Follows the chosen microphone. */
-let surface: Surface = 'glasses'
-let micSource: AudioInputSource = AudioInputSource.Glasses
-let glassesAvailable = false
 
 const teardown: Array<() => void> = []
 
@@ -97,39 +92,19 @@ async function main(): Promise<void> {
       persistSettings()
       paint()
     },
-    onCalibrate: () => {
-      const result = tuner.calibrate()
-      phone?.setCalibration(tuner.offset, result)
-      if (result === 'ok') persistSettings()
-      paint()
-    },
-    onClearCalibration: () => {
-      tuner.clearCalibration()
-      phone?.setCalibration(tuner.offset, 'ok')
+    onCapoChange: (semitones) => {
+      tuner.setCapo(semitones)
       persistSettings()
-      paint()
-    },
-    onMicSourceChange: (source) => {
-      micSource = source
-      tuner.setSource(source === AudioInputSource.Phone ? 'phone' : 'glasses')
-      phone?.setCalibration(tuner.offset, 'ok')
-      // The phone mic makes the phone the tuner; the glasses stand down.
-      surface = source === AudioInputSource.Phone ? 'phone' : 'glasses'
-      void restartMic()
-    },
-    onResetSession: () => {
-      tuner.clearSession()
-      paint()
+      redrawGlasses()
     },
     onTuningChange: (id) => {
       tuner.setTuning(id)
       persistSettings()
       redrawGlasses()
     },
-    onCapoChange: (semitones) => {
-      tuner.setCapo(semitones)
-      persistSettings()
-      redrawGlasses()
+    onResetSession: () => {
+      tuner.clearSession()
+      paint()
     },
   })
 
@@ -137,18 +112,13 @@ async function main(): Promise<void> {
 
   await loadSettings()
 
-  glassesAvailable = await setUpGlasses()
-  if (!glassesAvailable) {
-    // No glasses page, so hand the job to the phone rather than stopping.
-    surface = 'phone'
-    micSource = AudioInputSource.Phone
+  if (!(await setUpGlasses())) {
     phone?.setStatus({
-      connection: 'degraded',
-      message: 'Glasses unavailable. Tuning on the phone.',
+      connection: 'error',
+      message: 'Connect your glasses and reopen Headstock.',
     })
+    return
   }
-
-  phone?.setSurface(surface)
 
   teardown.push(bridge.onEvenHubEvent(onHubEvent))
   teardown.push(
@@ -181,7 +151,6 @@ async function main(): Promise<void> {
   window.addEventListener('beforeunload', cleanup)
 
   installDevHarness()
-  void probeWebAudio()
 }
 
 /** Returns true when the glasses page is up and can be rendered to. */
@@ -234,35 +203,23 @@ async function startMic(): Promise<void> {
   if (!bridge) return
   try {
     const ok = await queue.run(
-      () => bridge!.audioControl(true, micSource),
+      () => bridge!.audioControl(true, AudioInputSource.Glasses),
       MIC_CONTROL_TIMEOUT_MS,
     )
     if (!ok) throw new Error('audioControl did not start')
     tuner.setPhase('listening')
     tuner.markActive(Date.now())
-    phone?.setMic({ active: true, source: micSource })
+    phone?.setMic({ active: true })
   } catch {
     tuner.setPhase('micError')
-    phone?.setMic({ active: false, source: micSource })
+    phone?.setMic({ active: false })
     phone?.setStatus({
       connection: 'error',
       message:
-        micSource === AudioInputSource.Glasses
-          ? 'The glasses microphone did not start. Check they are connected and worn, or switch to the phone microphone.'
-          : 'The phone microphone did not start. Check microphone permission for the Even app.',
+        'The glasses microphone did not start. Check they are connected and worn.',
     })
   }
   paint()
-}
-
-async function restartMic(): Promise<void> {
-  if (!bridge) return
-  await queue.run(() => bridge!.audioControl(false), MIC_CONTROL_TIMEOUT_MS)
-  // The two microphone paths need not agree on payload format, nor on rate.
-  resetPcmFormat()
-  tuner.resetRateMeter(Date.now())
-  tuner.reset()
-  await startMic()
 }
 
 /** Releases the mic after a long silence. */
@@ -273,7 +230,7 @@ async function goIdle(): Promise<void> {
   // tuned.
   tuner.reset()
   await queue.run(() => bridge!.audioControl(false), MIC_CONTROL_TIMEOUT_MS)
-  phone?.setMic({ active: false, source: micSource })
+  phone?.setMic({ active: false })
   paint()
 }
 
@@ -294,7 +251,7 @@ function onHubEvent(event: EvenHubEvent): void {
     if (tuner.currentPhase === 'micError') {
       tuner.setPhase('listening')
       tuner.markActive(Date.now())
-      phone?.setMic({ active: true, source: micSource })
+      phone?.setMic({ active: true })
       phone?.setStatus({ connection: 'ok', message: '' })
     }
 
@@ -400,7 +357,6 @@ function tick(): void {
 
   if (now - lastRateShown > 2000) {
     lastRateShown = now
-    phone?.setSampleRate(tuner.measuredSampleRate(now))
   }
 
   if (exitDialogOpen && now - exitDialogOpenedAt > EXIT_DIALOG_TIMEOUT_MS) {
@@ -422,7 +378,7 @@ function tick(): void {
 }
 
 /**
- * Pushes the current view to both surfaces. Never advances detection: that is
+ * Pushes the current view to the display. Never advances detection: that is
  * `tick`'s job, so a gesture cannot inject a duplicate reading.
  */
 /**
@@ -431,7 +387,7 @@ function tick(): void {
  */
 function redrawGlasses(): void {
   phone?.setSettings(tuner.settings)
-  if (!glassesAvailable || surface !== 'glasses') {
+  if (!renderer) {
     paint()
     return
   }
@@ -444,10 +400,9 @@ function paint(): void {
   // whatever replaced us when we were backgrounded. Drawing underneath either
   // one paints over what the user is actually looking at.
   if (!exitDialogOpen && !backgrounded && glassesConnected) {
-    if (surface === 'glasses') renderer?.render(view)
-    else renderer?.renderStandby()
+    renderer?.render(view)
   }
-  phone?.setReading(view, surface)
+  phone?.setReading(view)
 }
 
 /**
@@ -458,39 +413,6 @@ function closeExitDialog(): void {
   if (!exitDialogOpen) return
   exitDialogOpen = false
   renderer?.invalidate()
-}
-
-/**
- * Checks whether the WebView will give us the microphone directly.
- *
- * The host converts the phone microphone to 16 kHz itself and pads the stream
- * to hold that rate, which stretches the audio and makes every reading flat.
- * Capturing through the WebView instead would come straight from the device at
- * its own rate, with AudioContext reporting exactly what that rate is, so
- * there would be nothing to guess and nothing to calibrate.
- *
- * Only a probe: it reports what is possible and releases the microphone again.
- */
-async function probeWebAudio(): Promise<void> {
-  const media = navigator.mediaDevices
-  if (!media?.getUserMedia) {
-    phone?.setWebAudio('not supported')
-    return
-  }
-  try {
-    const stream = await media.getUserMedia({ audio: true })
-    const ctx = new AudioContext()
-    const rate = ctx.sampleRate
-    const track = stream.getAudioTracks()[0]
-    const settings = track?.getSettings?.() ?? {}
-    phone?.setWebAudio(`${Math.round(settings.sampleRate ?? rate)} Hz`)
-    track?.stop()
-    void ctx.close()
-  } catch (err) {
-    phone?.setWebAudio(
-      `blocked (${err instanceof Error ? err.name : 'unknown'})`,
-    )
-  }
 }
 
 // --- Settings persistence -----------------------------------------------
@@ -525,8 +447,6 @@ async function loadSettings(): Promise<void> {
         a4: clamp(parsed.a4 ?? DEFAULT_SETTINGS.a4, 415, 445),
         tuningId: parsed.tuningId ?? DEFAULT_SETTINGS.tuningId,
         capo: clamp(parsed.capo ?? DEFAULT_SETTINGS.capo, 0, 12),
-        // A stored value always wins, including a deliberate zero from Clear.
-        offsets: { ...DEFAULT_SETTINGS.offsets, ...(parsed.offsets ?? {}) },
       }
       tuner.setTuning(tuner.settings.tuningId)
       tuner.setCapo(tuner.settings.capo)

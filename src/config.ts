@@ -1,4 +1,4 @@
-/** Shared tuning thresholds. Both surfaces and the settle logic read these. */
+/** Shared tuning thresholds, read by the display and the settle logic. */
 
 /** Cents within which a string counts as in tune. */
 export const IN_TUNE_CENTS = 1.5
