@@ -27,12 +27,6 @@ import { midiToFreq } from './tuning/notes'
 const FRAME_MS = 100
 
 /**
- * Set once a contextual-menu click arrives, which proves the firmware opens
- * the menu. Until then long press cycles tunings instead.
- */
-let menuConfirmed = false
-
-/**
  * Input is ignored until this time.
  *
  * The host emits a bare `sysEvent` with only `eventSource` set as the page
@@ -279,7 +273,6 @@ function onHubEvent(event: EvenHubEvent): void {
   if (event.menuItemClickEvent) {
     const id = tuningIdForMenuItem(event.menuItemClickEvent.itemID)
     if (id) {
-      menuConfirmed = true
       tuner.setTuning(id)
       persistSettings()
       redrawGlasses()
@@ -296,10 +289,7 @@ function onHubEvent(event: EvenHubEvent): void {
 
     // Lifecycle events are always acted on; user input waits for the guard.
     const isInput =
-      type === OsEventTypeList.CLICK_EVENT ||
-      type === OsEventTypeList.DOUBLE_CLICK_EVENT ||
-      type === OsEventTypeList.LONG_PRESS_EVENT ||
-      type === OsEventTypeList.LONG_PRESS_RELEASE_EVENT
+      type === OsEventTypeList.CLICK_EVENT || type === OsEventTypeList.DOUBLE_CLICK_EVENT
     if (isInput && Date.now() < inputArmedAt) return
 
     switch (type) {
@@ -307,16 +297,6 @@ function onHubEvent(event: EvenHubEvent): void {
         if (tuner.currentPhase === 'idle') void resumeFromIdle()
         else tuner.toggleLock()
         paint()
-        break
-      case OsEventTypeList.LONG_PRESS_RELEASE_EVENT:
-        // Fallback for firmware that does not open the contextual menu. Once a
-        // menu click has been seen the menu is known to work, so long press
-        // stops acting and leaves the gesture to the OS.
-        if (!menuConfirmed) {
-          tuner.cycleTuning()
-          persistSettings()
-          redrawGlasses()
-        }
         break
       case OsEventTypeList.DOUBLE_CLICK_EVENT:
         // Nothing is torn down here: the user can still cancel, and cleaning

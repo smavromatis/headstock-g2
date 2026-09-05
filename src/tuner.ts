@@ -15,7 +15,6 @@ import {
   centsForString,
   matchString,
   transposeTuning,
-  TUNINGS,
   tuningById,
   type GuitarString,
   type Tuning,
@@ -159,13 +158,6 @@ export class Tuner {
     )
     this.lockedString = null
     this.reset()
-  }
-
-  /** Next preset, for the long-press fallback when no menu is available. */
-  cycleTuning(): void {
-    const order = TUNINGS.map((t) => t.id)
-    const next = order[(order.indexOf(this.basePreset.id) + 1) % order.length]
-    this.setTuning(next)
   }
 
   /** Feeds one audio event payload. */

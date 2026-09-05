@@ -96,11 +96,12 @@ character to any string the glasses render and rerun `npm run gen:metrics`;
 - Browser `localStorage` is unreliable across restarts in this WebView. Settings
   go to `bridge.setLocalStorage`, debounced.
 - `setBackgroundState` and `onBackgroundRestore` do not exist in SDK 0.0.14
-  despite being documented. `LONG_PRESS_EVENT`, `LONG_PRESS_RELEASE_EVENT` and
-  the contextual-menu API exist but are absent from it.
-- The gesture that opens the OS contextual menu is undocumented and unverified
-  on hardware. Long press cycles tunings as a fallback until a menu selection is
-  seen.
+  despite being documented, while `LONG_PRESS_EVENT` and the contextual-menu
+  API exist but are absent from it.
+- The OS opens the contextual menu on a long press and renders `menuObject`
+  itself, confirmed on hardware. The app does not handle long press: the
+  gesture belongs to the firmware, and acting on it as well would change the
+  tuning underneath the menu the user is reading.
 - Some glyphs are missing from the firmware font and render as nothing:
   `▮ ▬ ╫ ▪ ▫ ✓ ░ ▓ ▀ ▐`. Check with `getAdvW` before using any character.
 - Text that exactly fills a container wraps to an invisible second line. Padding
