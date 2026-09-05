@@ -1,0 +1,31 @@
+{
+  "name": "tuneful",
+  "version": "1.0.0",
+  "description": "Classical guitar tuner for Even Realities G2 smart glasses",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "pack": "npm run build && npx evenhub pack app.json dist -o tuneful.ehpk",
+    "sim": "evenhub-simulator -g --automation-port 9898 http://localhost:5173",
+    "check:glyphs": "node scripts/check-glyphs.mjs",
+    "gen:metrics": "node scripts/gen-metrics.mjs",
+    "prebuild": "node scripts/gen-metrics.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "devDependencies": {
+    "@evenrealities/evenhub-cli": "^0.1.14",
+    "@evenrealities/evenhub-simulator": "^0.9.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "@evenrealities/pretext": "^0.1.4"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "^0.0.14"
+  },
+  "private": true
+}

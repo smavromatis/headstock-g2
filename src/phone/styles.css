@@ -1,0 +1,287 @@
+/*
+ * Instrument panel, not a settings screen: hairline rules rather than cards,
+ * tabular numerals so readings do not jitter as digits change width.
+ * The glasses green (#3CFA44) belongs on the display, not here.
+ */
+
+:root {
+  --text: #232323;
+  --dim: #8b8b8b;
+  --faint: #c4c4c4;
+  --bg: #ffffff;
+  --rule: rgba(35, 35, 35, 0.14);
+  --accent: #fef991;
+  --flat: #232323;
+  --ok: #1c8b4b;
+  --warn: #b4571b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #ffffff;
+    --dim: #7e7e7e;
+    --faint: #4a4a4a;
+    --bg: #0d0d0d;
+    --rule: rgba(255, 255, 255, 0.14);
+    --flat: #ffffff;
+    --ok: #5ddc95;
+    --warn: #e8a061;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 24px 40px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'FK Grotesk Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    system-ui, sans-serif;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- masthead ---------------------------------------------------------- */
+
+.top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 28px 0 14px;
+  border-bottom: 1px solid var(--text);
+}
+
+.mark {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.state {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.state[data-live='true'] { color: var(--ok); }
+.state[data-live='error'] { color: var(--warn); }
+
+/* --- the reading ------------------------------------------------------- */
+
+.reading {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 8px;
+  padding: 44px 0 10px;
+  min-height: 168px;
+}
+
+.note {
+  font-size: 92px;
+  font-weight: 600;
+  line-height: 0.82;
+  letter-spacing: -0.04em;
+}
+
+.note[data-idle='true'] { color: var(--faint); }
+
+.deviation { text-align: right; }
+
+.cents {
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.cents[data-tuned='true'] { color: var(--ok); }
+.cents[data-idle='true'] { color: var(--faint); }
+
+.action {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-top: 8px;
+  min-height: 14px;
+}
+
+.action[data-tuned='true'] { color: var(--ok); }
+
+/* --- meter ------------------------------------------------------------- */
+
+.meter {
+  position: relative;
+  height: 30px;
+  margin-top: 6px;
+  border-top: 1px solid var(--rule);
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 7px;
+  background: var(--rule);
+}
+
+.tick.centre { height: 13px; background: var(--text); }
+
+.needle {
+  position: absolute;
+  top: -1px;
+  width: 2px;
+  height: 15px;
+  margin-left: -1px;
+  background: var(--flat);
+  transition: left 90ms linear, background-color 150ms ease, opacity 150ms ease;
+}
+
+.needle[data-tuned='true'] { background: var(--ok); width: 4px; margin-left: -2px; }
+.needle[data-idle='true'] { opacity: 0; }
+
+.scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  margin-top: 12px;
+}
+
+/* --- session ----------------------------------------------------------- */
+
+.session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 0;
+  border-top: 1px solid var(--rule);
+  margin-top: 18px;
+}
+
+.pips { display: flex; gap: 10px; align-items: center; }
+
+.pip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.pip i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--faint);
+}
+
+.pip[data-done='true'] i { background: var(--ok); border-color: var(--ok); }
+.pip[data-done='true'] { color: var(--text); }
+.pip[data-active='true'] i { border-color: var(--text); border-width: 2px; }
+
+.session button {
+  border: 0;
+  background: none;
+  padding: 6px 0 6px 12px;
+  color: var(--dim);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* --- settings rows ----------------------------------------------------- */
+
+.rows { border-top: 1px solid var(--rule); }
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 54px;
+  border-bottom: 1px solid var(--rule);
+  gap: 16px;
+}
+
+.row-label {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.row-control { display: flex; align-items: center; gap: 4px; }
+
+.row-control .val {
+  min-width: 62px;
+  text-align: right;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.step {
+  border: 0;
+  background: none;
+  width: 34px;
+  height: 34px;
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  opacity: 0.55;
+}
+
+.step:active { opacity: 1; }
+
+.choice { display: flex; gap: 18px; }
+
+.choice button {
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  color: var(--faint);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.choice button[aria-pressed='true'] {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* --- footer ------------------------------------------------------------ */
+
+.legend {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 20px;
+  padding-top: 24px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.legend b { font-weight: 500; color: var(--text); }
+
+.notice {
+  padding: 12px 0 0;
+  font-size: 13px;
+  color: var(--warn);
+  min-height: 0;
+}

@@ -1,0 +1,281 @@
+/**
+ * Tuner state machine: audio in, view model out. No bridge calls, so it runs
+ * without a device.
+ *
+ * `advance()` mutates, `view()` is a pure read. Keeping them separate stops a
+ * gesture or settings change from running a second detection pass and pushing
+ * a duplicate reading into the smoother.
+ */
+
+import { detectPitch, rmsOf, WINDOW_SIZE } from './audio/pitch'
+import { AudioRingBuffer, PitchSmoother, SAMPLE_RATE, decodePcm } from './audio/stream'
+import { STANDARD_TUNING, centsForString, matchString, type GuitarString } from './tuning/notes'
+import {
+  ATTACK_SKIP_MS,
+  CONFIRM_HOLD_MS,
+  FINE_ENTER_CENTS,
+  FINE_EXIT_CENTS,
+  IDLE_TIMEOUT_MS,
+  IN_TUNE_CENTS,
+  METER_COARSE_CENTS,
+  METER_FINE_CENTS,
+  READING_HOLD_MS,
+} from './config'
+
+export type TunerPhase = 'starting' | 'listening' | 'reading' | 'idle' | 'micError'
+
+/** Where the tuner is currently being driven from. */
+export type Surface = 'glasses' | 'phone'
+
+export interface TunerSettings {
+  a4: number
+  /** Cents added to every reading, for calibrating against a known reference. */
+  calibration: number
+}
+
+export const DEFAULT_SETTINGS: TunerSettings = { a4: 440, calibration: 0 }
+
+export interface TunerView {
+  phase: TunerPhase
+  /** Index into STANDARD_TUNING, or null when nothing is detected. */
+  stringIndex: number | null
+  locked: boolean
+  cents: number | null
+  freq: number | null
+  a4: number
+  /** Pitch too far from any open string to name it (auto mode only). */
+  offScale: boolean
+  /** Inside the in-tune band right now, but not yet held long enough. */
+  inTolerance: boolean
+  /** Held inside the band for CONFIRM_HOLD_MS - this is the real "in tune". */
+  confirmed: boolean
+  /** Meter is on the fine scale. */
+  fine: boolean
+  /** Half-range of the meter in cents (coarse or fine). */
+  meterRange: number
+  /** Which strings have been confirmed in tune this session. */
+  tuned: readonly boolean[]
+}
+
+export class Tuner {
+  private readonly ring = new AudioRingBuffer(WINDOW_SIZE * 3)
+  private readonly smoother = new PitchSmoother()
+  private readonly window = new Float32Array(WINDOW_SIZE)
+
+  private lastDetectionAt = 0
+  private lastSoundAt = 0
+  private lockedString: GuitarString | null = null
+  private phase: TunerPhase = 'starting'
+  private lastFreq: number | null = null
+  private lastStringIndex: number | null = null
+  private offScale = false
+
+  // Attack rejection
+  private prevRms = 0
+  private suppressUntil = 0
+
+  // Settle
+  private inToleranceSince: number | null = null
+  private confirmed = false
+
+  // Meter scale
+  private fine = false
+
+  private tuned: boolean[] = STANDARD_TUNING.map(() => false)
+
+  settings: TunerSettings = { ...DEFAULT_SETTINGS }
+
+  /** Feeds one audio event payload. */
+  ingest(rawPcm: unknown): void {
+    const samples = decodePcm(rawPcm)
+    if (samples.length) this.ring.push(samples)
+  }
+
+  setPhase(phase: TunerPhase): void {
+    this.phase = phase
+  }
+
+  get currentPhase(): TunerPhase {
+    return this.phase
+  }
+
+  get locked(): boolean {
+    return this.lockedString !== null
+  }
+
+  get tunedCount(): number {
+    return this.tuned.filter(Boolean).length
+  }
+
+  lock(s: GuitarString | null): void {
+    this.lockedString = s
+    this.resetSettle()
+    this.smoother.reset()
+  }
+
+  toggleLock(): void {
+    if (this.lockedString) this.lockedString = null
+    else if (this.lastStringIndex !== null) this.lockedString = STANDARD_TUNING[this.lastStringIndex]
+    else this.lockedString = STANDARD_TUNING[0]
+    this.resetSettle()
+  }
+
+  step(direction: 1 | -1): void {
+    const current = this.lockedString
+      ? STANDARD_TUNING.indexOf(this.lockedString)
+      : (this.lastStringIndex ?? 0)
+    const next = Math.max(0, Math.min(STANDARD_TUNING.length - 1, current + direction))
+    this.lockedString = STANDARD_TUNING[next]
+    this.resetSettle()
+    this.smoother.reset()
+  }
+
+  /** Clears the six-string session progress. */
+  clearSession(): void {
+    this.tuned = STANDARD_TUNING.map(() => false)
+  }
+
+  /**
+   * Advances detection one frame. Driven by a timer, not by audio events:
+   * events arrive in small chunks that mostly re-read the same window.
+   */
+  advance(now: number): void {
+    const window = this.ring.latest(WINDOW_SIZE, this.window)
+
+    if (window) {
+      const level = rmsOf(window)
+
+      // A pluck is a sharp jump in level. The transient after it is
+      // inharmonic and sharp, so pause until it leaves the window.
+      if (level > 0.01 && level > this.prevRms * 2.5) {
+        this.suppressUntil = now + ATTACK_SKIP_MS
+        this.resetSettle()
+        this.smoother.reset()
+      }
+      this.prevRms = level
+      if (level > 0.004) this.lastSoundAt = now
+
+      if (now >= this.suppressUntil) {
+        const result = detectPitch(window, SAMPLE_RATE)
+        if (result) {
+          const smoothed = this.smoother.push(result.freq)
+          // Calibration shifts the measurement, not the target, so the
+          // displayed Hz stays what the mic heard.
+          this.lastFreq = smoothed * Math.pow(2, this.settings.calibration / 1200)
+          this.lastDetectionAt = now
+        }
+      }
+    }
+
+    if (now - this.lastDetectionAt > READING_HOLD_MS) {
+      this.smoother.reset()
+      this.lastFreq = null
+      this.lastStringIndex = null
+      this.offScale = false
+      this.resetSettle()
+      this.fine = false
+    }
+
+    this.updateMatch()
+    this.updateSettle(now)
+    this.updatePhase(now)
+  }
+
+  private updateMatch(): void {
+    if (this.lastFreq === null) return
+
+    if (this.lockedString) {
+      const m = centsForString(this.lastFreq, this.lockedString, this.settings.a4)
+      this.lastStringIndex = STANDARD_TUNING.indexOf(this.lockedString)
+      this.currentCents = m.cents
+      // A locked string is never off-scale: the user has said what they are
+      // tuning, so target and direction stay on screen however far out.
+      this.offScale = false
+    } else {
+      const m = matchString(this.lastFreq, this.settings.a4)
+      this.lastStringIndex = STANDARD_TUNING.indexOf(m.string)
+      this.currentCents = m.cents
+      this.offScale = !m.inRange
+    }
+  }
+
+  private currentCents: number | null = null
+
+  private updateSettle(now: number): void {
+    const c = this.currentCents
+    const usable = c !== null && this.lastFreq !== null && !this.offScale
+
+    if (usable && Math.abs(c) <= IN_TUNE_CENTS) {
+      if (this.inToleranceSince === null) this.inToleranceSince = now
+      if (!this.confirmed && now - this.inToleranceSince >= CONFIRM_HOLD_MS) {
+        this.confirmed = true
+        if (this.lastStringIndex !== null) this.tuned[this.lastStringIndex] = true
+      }
+    } else {
+      this.resetSettle()
+    }
+
+    // Hysteresis, so the scale cannot flap on the boundary.
+    if (usable) {
+      const abs = Math.abs(c)
+      if (!this.fine && abs <= FINE_ENTER_CENTS) this.fine = true
+      else if (this.fine && abs > FINE_EXIT_CENTS) this.fine = false
+    }
+  }
+
+  private updatePhase(now: number): void {
+    if (this.phase === 'micError' || this.phase === 'idle') return
+    const fresh = this.lastFreq !== null && now - this.lastDetectionAt <= READING_HOLD_MS
+    this.phase = fresh ? 'reading' : 'listening'
+  }
+
+  /** True when nothing has been heard for long enough to release the mic. */
+  isIdle(now: number): boolean {
+    return this.lastSoundAt > 0 && now - this.lastSoundAt > IDLE_TIMEOUT_MS
+  }
+
+  private resetSettle(): void {
+    this.inToleranceSince = null
+    this.confirmed = false
+  }
+
+  /** Current view. Pure, so it is safe to call as often as needed. */
+  view(): TunerView {
+    const cents = this.lastFreq === null ? null : this.currentCents
+    const inTolerance =
+      cents !== null && !this.offScale && Math.abs(cents) <= IN_TUNE_CENTS
+
+    return {
+      phase: this.phase,
+      stringIndex: this.lastStringIndex,
+      locked: this.lockedString !== null,
+      cents,
+      freq: this.lastFreq,
+      a4: this.settings.a4,
+      offScale: this.offScale,
+      inTolerance,
+      confirmed: this.confirmed,
+      fine: this.fine,
+      meterRange: this.fine ? METER_FINE_CENTS : METER_COARSE_CENTS,
+      tuned: this.tuned,
+    }
+  }
+
+  reset(): void {
+    this.ring.clear()
+    this.smoother.reset()
+    this.lastFreq = null
+    this.lastStringIndex = null
+    this.currentCents = null
+    this.lastDetectionAt = 0
+    this.prevRms = 0
+    this.suppressUntil = 0
+    this.resetSettle()
+    this.fine = false
+  }
+
+  /** Called when the mic is (re)started, so idle timing starts fresh. */
+  markActive(now: number): void {
+    this.lastSoundAt = now
+  }
+}
