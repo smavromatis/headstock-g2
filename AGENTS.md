@@ -133,6 +133,14 @@ sustained note drags the gate above its own signal and the tuner goes deaf after
 about fifteen seconds. And auto-detect cannot survive a loud instrument nearby;
 locking a string is the answer, and it rejects anything outside its own window.
 
+## Where writing goes
+
+The README is for someone tuning a guitar. Rationale for a change goes in a
+code comment at the site of the change, or in this file. It has drifted back
+into the README three times, growing it from 124 to 216 lines, because every
+fix arrived with a paragraph explaining itself. `npm run check:docs` fails the
+build when implementation vocabulary reappears there.
+
 ## Checks
 
 `scripts/` guards the failures that have actually happened here: row overflow,
