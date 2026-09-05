@@ -1,4 +1,4 @@
-# Headstock
+# Headstock (Guitar Tuner)
 
 A guitar tuner for Even Realities G2 smart glasses.
 
