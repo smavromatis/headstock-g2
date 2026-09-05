@@ -96,8 +96,22 @@ async function main(): Promise<void> {
       persistSettings()
       paint()
     },
+    onCalibrate: () => {
+      const result = tuner.calibrate()
+      phone?.setCalibration(tuner.offset, result)
+      if (result === 'ok') persistSettings()
+      paint()
+    },
+    onClearCalibration: () => {
+      tuner.clearCalibration()
+      phone?.setCalibration(tuner.offset, 'ok')
+      persistSettings()
+      paint()
+    },
     onMicSourceChange: (source) => {
       micSource = source
+      tuner.setSource(source === AudioInputSource.Phone ? 'phone' : 'glasses')
+      phone?.setCalibration(tuner.offset, 'ok')
       // The phone mic makes the phone the tuner; the glasses stand down.
       surface = source === AudioInputSource.Phone ? 'phone' : 'glasses'
       void restartMic()
@@ -473,6 +487,7 @@ async function loadSettings(): Promise<void> {
         a4: clamp(parsed.a4 ?? DEFAULT_SETTINGS.a4, 415, 445),
         tuningId: parsed.tuningId ?? DEFAULT_SETTINGS.tuningId,
         capo: clamp(parsed.capo ?? DEFAULT_SETTINGS.capo, 0, 12),
+        offsets: parsed.offsets ?? {},
       }
       tuner.setTuning(tuner.settings.tuningId)
       tuner.setCapo(tuner.settings.capo)

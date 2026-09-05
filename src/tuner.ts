@@ -61,12 +61,23 @@ export interface TunerSettings {
   tuningId: string
   /** Capo position in semitones; 0 is no capo. */
   capo: number
+  /**
+   * Per-microphone correction in cents.
+   *
+   * The host resamples each microphone itself and the two paths need not agree:
+   * measured on one phone, the phone path read 0.37% low while delivering
+   * samples at the nominal rate, so the content was time-stretched somewhere
+   * the app cannot see. Measured against a source known to be right rather
+   * than hardcoded, since this is a property of a host build, not of a model.
+   */
+  offsets: Record<string, number>
 }
 
 export const DEFAULT_SETTINGS: TunerSettings = {
   a4: 440,
   tuningId: DEFAULT_TUNING.id,
   capo: 0,
+  offsets: {},
 }
 
 export interface TunerView {
@@ -124,6 +135,9 @@ export class Tuner {
   private confirmedAt = 0
   private longWindowActive = false
   private readonly rateMeter = new SampleRateMeter()
+
+  /** Key into `settings.offsets` for the microphone in use. */
+  private source = 'glasses'
 
   // Auto-detect stickiness: a challenger must win several frames in a row.
   private candidateIndex: number | null = null
@@ -194,6 +208,36 @@ export class Tuner {
   /** Restarts the rate measurement, for a change of microphone. */
   resetRateMeter(now: number): void {
     this.rateMeter.reset(now)
+  }
+
+  setSource(source: string): void {
+    this.source = source
+    this.reset()
+  }
+
+  get offset(): number {
+    return this.settings.offsets[this.source] ?? 0
+  }
+
+  /**
+   * Corrects the current microphone so the reading lands on the target.
+   *
+   * Only meaningful on a string already known to be in tune, so it refuses
+   * when the reading is far out: calibrating against a flat string would bake
+   * that error in permanently.
+   */
+  calibrate(): 'ok' | 'no-reading' | 'too-far' {
+    const c = this.currentCents
+    if (c === null || this.lastFreq === null || this.offScale) return 'no-reading'
+    if (Math.abs(c) > 25) return 'too-far'
+    this.settings.offsets = { ...this.settings.offsets, [this.source]: this.offset - c }
+    this.reset()
+    return 'ok'
+  }
+
+  clearCalibration(): void {
+    this.settings.offsets = { ...this.settings.offsets, [this.source]: 0 }
+    this.reset()
   }
 
   setPhase(phase: TunerPhase): void {
@@ -283,7 +327,11 @@ export class Tuner {
           const near =
             this.currentCents !== null && Math.abs(this.currentCents) <= STEADY_WITHIN_CENTS
           const alpha = (near ? SMOOTH_ALPHA_NEAR : SMOOTH_ALPHA_FAR) * result.confidence
-          this.lastFreq = this.smoother.push(result.freq, alpha)
+          // The correction belongs to the microphone, so it is applied to the
+          // measurement rather than to the target: the displayed frequency
+          // stays what the string is actually doing.
+          this.lastFreq =
+            this.smoother.push(result.freq, alpha) * Math.pow(2, this.offset / 1200)
           this.lastDetectionAt = now
         }
       }

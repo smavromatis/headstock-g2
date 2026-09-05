@@ -16,6 +16,8 @@ export interface PhoneUiHandlers {
   onResetSession(): void
   onTuningChange(id: string): void
   onCapoChange(semitones: number): void
+  onCalibrate(): void
+  onClearCalibration(): void
 }
 
 export interface PhoneUi {
@@ -25,6 +27,7 @@ export interface PhoneUi {
   setDevice(device: { battery: number | null }): void
   setMic(mic: { active: boolean; source: AudioInputSource }): void
   setSampleRate(rate: number | null): void
+  setCalibration(offsetCents: number, result: 'ok' | 'no-reading' | 'too-far'): void
   setSurface(surface: Surface): void
 }
 
@@ -91,6 +94,18 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
         </div>
       </div>
       <div class="row">
+        <span class="row-label">Calibration</span>
+        <div class="row-control">
+          <span class="val" id="cal-value" style="font-size:15px">none</span>
+          <button class="preset" type="button" id="cal-set">Set</button>
+          <button class="preset" type="button" id="cal-clear">Clear</button>
+        </div>
+      </div>
+      <p class="hint" id="cal-hint">
+        Play a string you know is in tune, then Set. Corrects this microphone
+        only, if it reads differently from the other one.
+      </p>
+      <div class="row">
         <span class="row-label">Audio rate</span>
         <span class="val" id="rate" style="font-size:15px">measuring…</span>
       </div>
@@ -120,7 +135,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   const noticeEl = el('notice')
   const legendEl = el('legend')
 
-  let settings: TunerSettings = { a4: 440, tuningId: TUNINGS[0].id, capo: 0 }
+  let settings: TunerSettings = { a4: 440, tuningId: TUNINGS[0].id, capo: 0, offsets: {} }
   let micActive = false
   let micSource: AudioInputSource = AudioInputSource.Glasses
   let currentSurface: Surface = 'glasses'
@@ -187,6 +202,9 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     paintSettings()
     handlers.onCapoChange(settings.capo)
   }
+  el('cal-set').addEventListener('click', () => handlers.onCalibrate())
+  el('cal-clear').addEventListener('click', () => handlers.onClearCalibration())
+
   el('capo-down').addEventListener('click', () => applyCapo(settings.capo - 1))
   el('capo-up').addEventListener('click', () => applyCapo(settings.capo + 1))
 
@@ -316,6 +334,17 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
       // Connection state is already implied by the masthead, which cannot read
       // "listening · glasses" through glasses that are not connected.
       el('battery').textContent = device.battery === null ? '--' : `${device.battery}%`
+    },
+
+    setCalibration(offsetCents, result) {
+      el('cal-value').textContent =
+        offsetCents === 0 ? 'none' : `${offsetCents > 0 ? '+' : '−'}${Math.abs(offsetCents).toFixed(1)}`
+      el('cal-hint').textContent =
+        result === 'no-reading'
+          ? 'Play a string first, then Set.'
+          : result === 'too-far'
+            ? 'That string is too far out to calibrate against. Tune it first.'
+            : 'Play a string you know is in tune, then Set. Corrects this microphone only, if it reads differently from the other one.'
     },
 
     setSampleRate(rate) {
