@@ -320,8 +320,12 @@ export class GlassesRenderer {
   }
 
   /**
-   * Stands the glasses down while the phone is the tuner, rather than leaving
-   * a stale reading that still looks live.
+   * Blanks the glasses while the phone is the tuner.
+   *
+   * The display is not being used, so it shows nothing at all rather than a
+   * card: unlit pixels are transparent on this hardware, so an empty page is
+   * the closest thing to switching the display off. The event-capture row
+   * keeps a single space, since an empty capture container is not valid.
    */
   renderStandby(): void {
     this.pending = { kind: 'standby' }
@@ -343,12 +347,12 @@ export class GlassesRenderer {
 
   private standbyRows(): RowSpec[] {
     return [
-      [CONTAINERS.header, padBetween('HEADSTOCK', 'PHONE', ROW_W), 2],
-      [CONTAINERS.note, renderBlockText('- -'), 2],
-      [CONTAINERS.scale, buildScaleRow(), 1],
-      [CONTAINERS.needle, '·'.repeat(NEEDLE_DOTS), 1],
-      [CONTAINERS.readout, centreish('TUNING ON PHONE', ROW_W), 3],
-      [CONTAINERS.strings, centreish('', ROW_W), 1],
+      [CONTAINERS.header, ' ', 0],
+      [CONTAINERS.note, ' ', 0],
+      [CONTAINERS.scale, ' ', 0],
+      [CONTAINERS.needle, ' ', 0],
+      [CONTAINERS.readout, ' ', 0],
+      [CONTAINERS.strings, ' ', 0],
     ]
   }
 

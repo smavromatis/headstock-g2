@@ -51,7 +51,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     <div class="meter" id="meter">
       <div class="needle" id="needle" data-idle="true" style="left:50%"></div>
     </div>
-    <div class="scale"><span>&minus;50</span><span>&minus;4.5</span><span>0</span><span>+4.5</span><span>+50</span></div>
+    <div class="scale"><span>&minus;50</span><span>0</span><span>+50</span></div>
 
     <div class="session">
       <div class="pips" id="pips"></div>
