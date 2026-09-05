@@ -23,6 +23,11 @@ Without hardware:
 Add `?demo=1` in a dev build to step through fixed tuning states with the
 swipe gestures.
 
+Checks:
+
+    npm run check:detection   # accuracy, drift, and the noise gate
+    npm run check:glyphs      # every glyph exists in the firmware font
+
 To package:
 
     npm run pack           # produces tuneful.ehpk
@@ -52,7 +57,11 @@ G3 and A3 a whole tone apart, so its window is 100 cents. Lock a string that
 sits further out than that.
 
 The microphone gate tracks the room rather than using a fixed threshold, so a
-quiet unplugged electric and a loud steel-string both register.
+quiet unplugged electric and a loud steel-string both register. It follows the
+quiet moments down and may only creep up, never past the current level. An
+averaging filter is wrong here: it rises toward whatever is playing, so a
+sustained note drags the gate above its own signal and the tuner goes deaf
+after about fifteen seconds. `npm run check:detection` covers this.
 
 Everything is referenced to the glasses' 16 kHz sample clock. Crystal tolerance
 is around 50 ppm, which is 0.09 cents, so the clock is not a practical source
@@ -141,6 +150,12 @@ page cannot be created.
 - Text that exactly fills a container wraps to an invisible second line.
   Padding is measured against the composed string, because kerning at the join
   is enough to lose a trailing word.
+- Every bridge call shares one BLE link, so they all queue through
+  `src/bridge-queue.ts`. Concurrent calls can drop the connection, and that
+  includes storage writes and microphone control, not just rendering.
+- Anything the host draws over the page, such as the exit dialog, is clipped by
+  a running frame loop. Rendering pauses while the dialog is up and while the
+  app is backgrounded, and resends every row afterwards.
 - The host emits a bare `sysEvent` carrying only `eventSource` as the page
   comes up. Since protobuf omits zero values, that is identical to a real
   click and cannot be told apart by shape, so input is ignored for 750 ms
@@ -152,6 +167,7 @@ page cannot be created.
 ## Files
 
     src/main.ts               bridge lifecycle, mic, input, persistence
+    src/bridge-queue.ts       serialises every call over the BLE link
     src/tuner.ts              state machine: audio in, view model out
     src/config.ts             shared thresholds
     src/audio/pitch.ts        YIN and phase refinement

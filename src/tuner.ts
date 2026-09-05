@@ -28,8 +28,8 @@ import {
   IN_TUNE_CENTS,
   METER_COARSE_CENTS,
   MIN_GATE,
+  NOISE_CREEP,
   NOISE_FALL,
-  NOISE_RISE,
   METER_FINE_CENTS,
   READING_HOLD_MS,
 } from './config'
@@ -170,10 +170,14 @@ export class Tuner {
     if (window) {
       const level = rmsOf(window)
 
-      // Track the room: fall quickly toward a quieter floor, rise slowly, so a
-      // sustained note cannot drag the floor up and gate itself out.
-      const rate = level < this.noiseFloor ? NOISE_FALL : NOISE_RISE
-      this.noiseFloor += rate * (level - this.noiseFloor)
+      // The floor tracks the quiet moments: it follows the level down, but may
+      // only creep up, and never past the current level. A note therefore
+      // cannot raise the floor and gate itself out.
+      if (level < this.noiseFloor) {
+        this.noiseFloor += NOISE_FALL * (level - this.noiseFloor)
+      } else {
+        this.noiseFloor = Math.min(level, this.noiseFloor * NOISE_CREEP)
+      }
       const gate = Math.max(MIN_GATE, this.noiseFloor * GATE_MARGIN)
 
       // A pluck is a sharp jump in level. The transient after it is

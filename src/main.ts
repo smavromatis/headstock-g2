@@ -21,6 +21,7 @@ import {
 
 import { Tuner, DEFAULT_SETTINGS, type TunerSettings, type Surface } from './tuner'
 import { GlassesRenderer, tuningIdForMenuItem } from './glasses/display'
+import { BridgeQueue } from './bridge-queue'
 import { mountPhoneUi, type PhoneUi } from './phone/ui'
 import { midiToFreq } from './tuning/notes'
 
@@ -55,11 +56,20 @@ const INPUT_ARM_MS = 750
 let exitDialogOpen = false
 let exitDialogOpenedAt = 0
 
+/**
+ * True between FOREGROUND_EXIT and FOREGROUND_ENTER.
+ *
+ * Same reason as the exit dialog: something else is on the glasses, and
+ * repainting underneath it would draw over whatever the user is looking at.
+ */
+let backgrounded = false
+
 /** Safety net, in case cancelling the dialog reports nothing at all. */
 const EXIT_DIALOG_TIMEOUT_MS = 20000
 const SETTINGS_KEY = 'tuneful.settings.v1'
 
 const tuner = new Tuner()
+const queue = new BridgeQueue()
 let bridge: EvenAppBridge | null = null
 let renderer: GlassesRenderer | null = null
 let phone: PhoneUi | null = null
@@ -147,6 +157,8 @@ async function setUpGlasses(): Promise<boolean> {
     return false
   }
 
+  // Startup calls are issued directly: the frame loop has not started, so
+  // there is nothing for them to race with.
   let result: StartUpPageCreateResult
   try {
     result = await bridge.createStartUpPageContainer(page)
@@ -166,7 +178,7 @@ async function setUpGlasses(): Promise<boolean> {
     console.log('TUNEFUL_RECOVERED_VIA_REBUILD')
   }
 
-  renderer = new GlassesRenderer(bridge)
+  renderer = new GlassesRenderer(bridge, queue)
   phone?.setStatus({ connection: 'ok', message: 'Running on your glasses.' })
   return true
 }
@@ -176,8 +188,8 @@ async function setUpGlasses(): Promise<boolean> {
 async function startMic(): Promise<void> {
   if (!bridge) return
   try {
-    const ok = await bridge.audioControl(true, micSource)
-    if (!ok) throw new Error('audioControl returned false')
+    const ok = await queue.run(() => bridge!.audioControl(true, micSource))
+    if (!ok) throw new Error('audioControl did not start')
     tuner.setPhase('listening')
     tuner.markActive(Date.now())
     phone?.setMic({ active: true, source: micSource })
@@ -197,11 +209,7 @@ async function startMic(): Promise<void> {
 
 async function restartMic(): Promise<void> {
   if (!bridge) return
-  try {
-    await bridge.audioControl(false)
-  } catch {
-    // Already closed; starting the new source is what matters.
-  }
+  await queue.run(() => bridge!.audioControl(false))
   tuner.reset()
   await startMic()
 }
@@ -212,11 +220,7 @@ async function goIdle(): Promise<void> {
   tuner.setPhase('idle')
   tuner.reset()
   tuner.clearSession()
-  try {
-    await bridge.audioControl(false)
-  } catch {
-    // Nothing to do; the phase is already idle either way.
-  }
+  await queue.run(() => bridge!.audioControl(false))
   phone?.setMic({ active: false, source: micSource })
   paint()
 }
@@ -302,16 +306,18 @@ function onHubEvent(event: EvenHubEvent): void {
         // up now would leave a live app that has stopped listening.
         exitDialogOpen = true
         exitDialogOpenedAt = Date.now()
-        void bridge?.shutDownPageContainer(1)
+        void queue.run(() => bridge!.shutDownPageContainer(1))
         break
       case OsEventTypeList.FOREGROUND_ENTER_EVENT:
         // The host may have migrated us through a headless WebView.
+        backgrounded = false
         closeExitDialog()
         tuner.reset()
         renderer?.invalidate()
         paint()
         break
       case OsEventTypeList.FOREGROUND_EXIT_EVENT:
+        backgrounded = true
         flushSettings()
         break
       case OsEventTypeList.ABNORMAL_EXIT_EVENT:
@@ -326,13 +332,19 @@ function onHubEvent(event: EvenHubEvent): void {
 
 function tick(): void {
   const now = Date.now()
-  tuner.advance(now)
 
   if (exitDialogOpen && now - exitDialogOpenedAt > EXIT_DIALOG_TIMEOUT_MS) {
     closeExitDialog()
   }
 
-  if (tuner.currentPhase !== 'idle' && tuner.isIdle(now)) {
+  // Idle means the microphone is closed, so there is nothing new to analyse
+  // and nothing on screen that changes. Running detection anyway burned a full
+  // YIN pass every 100ms over a buffer that cannot change.
+  if (tuner.currentPhase === 'idle') return
+
+  tuner.advance(now)
+
+  if (tuner.isIdle(now)) {
     void goIdle()
     return
   }
@@ -353,18 +365,15 @@ function redrawGlasses(): void {
     paint()
     return
   }
-  renderer?.invalidate()
-  void bridge
-    ?.rebuildPageContainer(GlassesRenderer.rebuildPage(tuner.view()))
-    .catch(() => undefined)
-    .then(() => paint())
+  void renderer?.rebuild(tuner.view())
 }
 
 function paint(): void {
   const view = tuner.view()
-  // The host owns the display while its exit dialog is up. Drawing under it
-  // clips the dialog, so the glasses are left alone until it closes.
-  if (!exitDialogOpen) {
+  // The host owns the display while its exit dialog is up, and so does
+  // whatever replaced us when we were backgrounded. Drawing underneath either
+  // one paints over what the user is actually looking at.
+  if (!exitDialogOpen && !backgrounded) {
     if (surface === 'glasses') renderer?.render(view)
     else renderer?.renderStandby()
   }
@@ -397,7 +406,9 @@ function flushSettings(): void {
     clearTimeout(persistTimer)
     persistTimer = null
   }
-  void bridge?.setLocalStorage(SETTINGS_KEY, JSON.stringify(tuner.settings))
+  const payload = JSON.stringify(tuner.settings)
+  // Storage shares the BLE link with rendering, so it queues behind it.
+  void queue.run(() => bridge?.setLocalStorage(SETTINGS_KEY, payload) ?? Promise.resolve(false))
 }
 
 /** Browser localStorage is unreliable across restarts in this WebView. */
@@ -524,7 +535,7 @@ function cleanup(): void {
   flushSettings()
 
   // Otherwise the mic keeps draining the glasses after exit.
-  void bridge?.audioControl(false)
+  void queue.run(() => bridge!.audioControl(false))
   for (const off of teardown.splice(0)) {
     try {
       off()

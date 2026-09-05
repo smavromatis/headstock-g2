@@ -22,6 +22,7 @@ import { renderBlockText, blockTextWidth } from './blockfont'
 import { TUNINGS } from '../tuning/notes'
 import { NEAR_CENTS } from '../config'
 import { textWidth } from './metrics'
+import type { BridgeQueue } from '../bridge-queue'
 import type { TunerView } from '../tuner'
 
 // --- Geometry ------------------------------------------------------------
@@ -223,13 +224,15 @@ const SPACE_PX = 5
 export class GlassesRenderer {
   private lastSent = new Map<string, string>()
   private lastColor = new Map<string, number>()
-  private pending: TunerView | null = null
+  private pending: { kind: 'view'; view: TunerView } | { kind: 'standby' } | null = null
   private flushing = false
 
   private readonly bridge: EvenAppBridge
+  private readonly queue: BridgeQueue
 
-  constructor(bridge: EvenAppBridge) {
+  constructor(bridge: EvenAppBridge, queue: BridgeQueue) {
     this.bridge = bridge
+    this.queue = queue
   }
 
   /**
@@ -269,7 +272,7 @@ export class GlassesRenderer {
   }
 
   render(view: TunerView): void {
-    this.pending = view
+    this.pending = { kind: 'view', view }
     void this.flush()
   }
 
@@ -278,15 +281,32 @@ export class GlassesRenderer {
    * a stale reading that still looks live.
    */
   renderStandby(): void {
-    this.pending = null
-    void this.flushRows([
+    this.pending = { kind: 'standby' }
+    void this.flush()
+  }
+
+  /**
+   * Redraws the whole page, for a change the in-place updates cannot express,
+   * such as a new tuning. Queued with everything else rather than issued
+   * directly, so it cannot overlap an in-flight text update.
+   */
+  async rebuild(view: TunerView): Promise<void> {
+    this.invalidate()
+    await this.queue.run(() =>
+      this.bridge.rebuildPageContainer(GlassesRenderer.rebuildPage(view)),
+    )
+    this.render(view)
+  }
+
+  private standbyRows(): RowSpec[] {
+    return [
       [CONTAINERS.header, padBetween('TUNEFUL', 'PHONE', ROW_W), 2],
       [CONTAINERS.note, renderBlockText('- -'), 2],
       [CONTAINERS.scale, buildScaleRow(false), 1],
       [CONTAINERS.needle, '·'.repeat(NEEDLE_DOTS), 1],
       [CONTAINERS.readout, centreish('TUNING ON PHONE', ROW_W), 3],
       [CONTAINERS.strings, centreish('', ROW_W), 1],
-    ])
+    ]
   }
 
   /** Forces the next render to resend every row (used after a foreground return). */
@@ -300,8 +320,14 @@ export class GlassesRenderer {
     this.flushing = true
     try {
       while (this.pending) {
-        const view = this.pending
+        const job = this.pending
         this.pending = null
+
+        if (job.kind === 'standby') {
+          await this.sendRows(this.standbyRows())
+          continue
+        }
+        const view = job.view
 
         const near = view.cents !== null && Math.abs(view.cents) <= NEAR_CENTS
 
@@ -328,16 +354,6 @@ export class GlassesRenderer {
     }
   }
 
-  private async flushRows(rows: RowSpec[]): Promise<void> {
-    if (this.flushing) return
-    this.flushing = true
-    try {
-      await this.sendRows(rows)
-    } finally {
-      this.flushing = false
-    }
-  }
-
   /** Sends only the rows whose content or brightness actually changed. */
   private async sendRows(rows: RowSpec[]): Promise<void> {
     for (const [c, content, color] of rows) {
@@ -350,30 +366,24 @@ export class GlassesRenderer {
     }
   }
 
-  /**
-   * One in-place text update. The timeout matters: a flaky BLE hop can hang
-   * ~30s and stall everything queued behind it. Dropping a frame is cheaper.
-   */
+  /** One in-place text update, queued behind any other bridge call. */
   private async upgrade(id: number, name: string, content: string, textColor: number): Promise<void> {
-    const call = this.bridge.textContainerUpgrade(
-      new TextContainerUpgrade({
-        containerID: id,
-        containerName: name,
-        // Offset and length both zero replaces the whole content.
-        contentOffset: 0,
-        contentLength: 0,
-        content,
-        textColor,
-      }),
+    const ok = await this.queue.run(() =>
+      this.bridge.textContainerUpgrade(
+        new TextContainerUpgrade({
+          containerID: id,
+          containerName: name,
+          // Offset and length both zero replaces the whole content.
+          contentOffset: 0,
+          contentLength: 0,
+          content,
+          textColor,
+        }),
+      ),
     )
-    try {
-      await Promise.race([
-        call,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500)),
-      ])
-    } catch {
-      // Drop the frame and let the next one resend; also forget what we think
-      // is on screen so the retry is not skipped as a no-op.
+    if (ok === null) {
+      // Dropped or timed out. Forget what we think is on screen so the next
+      // frame resends this row instead of skipping it as unchanged.
       this.lastSent.delete(name)
     }
   }

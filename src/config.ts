@@ -34,9 +34,17 @@ export const METER_FINE_CENTS = 10
  */
 export const MIN_GATE = 0.0015
 export const GATE_MARGIN = 4
-/** Floor falls quickly toward a quieter room, rises slowly. */
+/** Floor follows the quiet moments down. */
 export const NOISE_FALL = 0.25
-export const NOISE_RISE = 0.002
+/**
+ * The floor may only creep upward, and never above the current level.
+ *
+ * An averaging filter is wrong here: it rises toward whatever is playing, so a
+ * sustained note drags the floor up until the gate exceeds the signal and the
+ * tuner goes deaf. Measured at roughly 15 seconds. Tracking the quiet moments
+ * instead means a continuous tone cannot raise the floor at all.
+ */
+export const NOISE_CREEP = 1.0008
 
 /** Hysteresis: equal thresholds would make the scale flap on the boundary. */
 export const FINE_ENTER_CENTS = 8
