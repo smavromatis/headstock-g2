@@ -5,6 +5,12 @@ A guitar tuner for Even Realities G2 smart glasses.
 The glasses show the note, a needle and which way to turn the peg, so you can
 tune with both hands on the instrument and never look at a phone.
 
+![The tuner as you see it](docs/glasses-tuning.jpg)
+
+Hold to change tuning without putting the guitar down.
+
+![Choosing a tuning](docs/glasses-menu.jpg)
+
 ## Using it
 
 Play a string. Headstock names it, shows how far off it is in cents, and says
@@ -45,6 +51,8 @@ ensemble playing and 415 for baroque are both exact.
 
 The phone holds the settings: tuning, capo and reference pitch. Set them once
 and put it away. Headstock needs the glasses to run.
+
+<img src="docs/phone.png" alt="The settings screen" width="380">
 
 ## Accuracy
 
