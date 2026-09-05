@@ -77,7 +77,12 @@ export const DEFAULT_SETTINGS: TunerSettings = {
   a4: 440,
   tuningId: DEFAULT_TUNING.id,
   capo: 0,
-  offsets: {},
+  // The host pads the phone stream to hold a nominal 16 kHz while capture runs
+  // slow, stretching the audio so every reading lands about 0.4% flat. The
+  // conversion is the host's own code, so this should be the same on any
+  // phone, but it is measured on one device and one app build. Set re-measures
+  // it, Clear removes it.
+  offsets: { phone: 7.8 },
 }
 
 export interface TunerView {

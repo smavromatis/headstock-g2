@@ -114,8 +114,13 @@ character to any string the glasses render and rerun `npm run gen:metrics`;
   The arrival rate still measures 16 kHz, so the padding is invisible to a
   rate meter, and the repeated-sample signature disappears under realistic
   noise, so it cannot be detected automatically either. Both were tested.
-  The fix is the per-microphone calibration on the phone, measured against a
-  source known to be right. Ruled out on the way: an iPhone high-pass roll-off
+  Neither route out exists: `audioControl(isOpen, source)` takes no sample
+  rate, and the WebView does not expose `getUserMedia` at all, so the host's
+  padded stream is the only phone audio available. The phone therefore ships
+  with a +7.8 cent default correction, which Set re-measures and Clear removes.
+  Note this establishes only that the two paths differ: whether the glasses are
+  right in absolute terms has not been checked against an external reference,
+  and a tuner uniformly sharp would tune a guitar sharp and call it perfect. Ruled out on the way: an iPhone high-pass roll-off
   (moves the reading 0.7 cents sharp), a sample-rate mismatch (measured at
   nominal), low-frequency rumble (within 2 cents), and dropped buffers (biases
   sharp, not flat).

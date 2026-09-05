@@ -525,7 +525,8 @@ async function loadSettings(): Promise<void> {
         a4: clamp(parsed.a4 ?? DEFAULT_SETTINGS.a4, 415, 445),
         tuningId: parsed.tuningId ?? DEFAULT_SETTINGS.tuningId,
         capo: clamp(parsed.capo ?? DEFAULT_SETTINGS.capo, 0, 12),
-        offsets: parsed.offsets ?? {},
+        // A stored value always wins, including a deliberate zero from Clear.
+        offsets: { ...DEFAULT_SETTINGS.offsets, ...(parsed.offsets ?? {}) },
       }
       tuner.setTuning(tuner.settings.tuningId)
       tuner.setCapo(tuner.settings.capo)

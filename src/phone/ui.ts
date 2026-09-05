@@ -103,8 +103,9 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
         </div>
       </div>
       <p class="hint" id="cal-hint">
-        Play a string you know is in tune, then Set. Corrects this microphone
-        only, if it reads differently from the other one.
+        The phone microphone reads slightly flat, so it starts corrected. Play a
+        string you know is in tune and press Set to measure it yourself, or
+        Clear to remove the correction.
       </p>
       <div class="row">
         <span class="row-label">WebView mic</span>
@@ -349,7 +350,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
           ? 'Play a string first, then Set.'
           : result === 'too-far'
             ? 'That string is too far out to calibrate against. Tune it first.'
-            : 'Play a string you know is in tune, then Set. Corrects this microphone only, if it reads differently from the other one.'
+            : 'The phone microphone reads slightly flat, so it starts corrected. Play a string you know is in tune and press Set to measure it yourself, or Clear to remove the correction.'
     },
 
     setWebAudio(status) {
