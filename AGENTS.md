@@ -29,7 +29,7 @@ production builds.
     src/glasses/blockfont.ts  5x3 dot-matrix font
     src/glasses/display.ts    layout, row builders, renderer
     src/glasses/metrics.ts    generated font metrics, do not edit
-    src/phone/ui.ts           settings panel and phone tuner
+    src/phone/ui.ts           settings panel
 
 `advance()` mutates detection state and `view()` is a pure read. They are
 separate so a gesture or settings change cannot run a second detection pass and
@@ -106,14 +106,6 @@ character to any string the glasses render and rerun `npm run gen:metrics`;
 - Text that exactly fills a container wraps to an invisible second line. Padding
   is measured against the composed string, kerning included, because measuring
   the halves separately was enough to lose a trailing word.
-- The phone microphone is not used, and `phone-microphone` is not requested.
-  Its path reads about 0.4% flat: the host pads that stream to hold a nominal
-  16 kHz while capture runs slow, so the audio is time-stretched. Reproduced
-  exactly by repeating one sample in every 270. There is no way around it:
-  `audioControl(isOpen, source)` takes no sample rate, and the WebView does not
-  expose `getUserMedia`, so the padded stream is the only phone audio available.
-  Correcting it needs a constant measured per device and app build, which is
-  why the mode was dropped rather than shipped with a guess.
 - The simulator has no usable audio input, so it can only verify layout.
   `onDeviceStatusChanged` never fires there either.
 
@@ -131,9 +123,7 @@ the final adjustments are made.
 **State that outlives what it described.** The pitch search was narrowed around
 the last detected string; a harmonic inside that window kept the detection
 fresh, which kept the window narrow. Two of ten string changes were then never
-detected at all. The `number[]` payload format latch had the same shape across a
-microphone change, since the glasses and phone are separate host paths that need
-not agree.
+detected at all.
 
 Two more worth knowing. The noise floor must track the quiet moments and may
 only creep upward: an averaging filter rises toward whatever is playing, so a

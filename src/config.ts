@@ -56,10 +56,9 @@ export const HZ_UPDATE_MS = 500
 /**
  * Timeout for microphone control.
  *
- * Far longer than a render: asking for the phone microphone can raise a
- * permission dialog, and the call does not return until the user answers.
- * At the render timeout it reported failure while the microphone was starting
- * normally.
+ * Far longer than a render: opening the microphone can raise a permission
+ * dialog, and the call does not return until the user answers. At the render
+ * timeout it reported failure while the microphone was starting normally.
  */
 export const MIC_CONTROL_TIMEOUT_MS = 30000
 

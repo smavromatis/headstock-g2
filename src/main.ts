@@ -1,11 +1,8 @@
 /**
- * Headstock - a classical guitar tuner for Even Realities G2.
+ * Headstock - a guitar tuner for Even Realities G2.
  *
- * Once running the app needs no phone interaction; the phone holds settings and
- * status, or becomes the tuner itself when the phone mic is selected.
- *
- * Nothing here assumes the glasses are present. If the page cannot be drawn,
- * the app falls back to tuning on the phone.
+ * Once running the app needs no phone interaction: the tuner lives on the
+ * glasses, and the phone holds settings and status.
  */
 
 import {
@@ -126,7 +123,7 @@ async function main(): Promise<void> {
       phone?.setDevice({ battery: status.batteryLevel ?? null })
 
       // Without this, a disconnect leaves every render to time out at 2.5s
-      // each: the app looks frozen and keeps draining the phone for nothing.
+      // each: the app looks frozen and keeps draining the battery for nothing.
       const connected = status.isConnected()
       if (connected === glassesConnected) return
       glassesConnected = connected
@@ -138,7 +135,7 @@ async function main(): Promise<void> {
       } else {
         phone?.setStatus({
           connection: 'degraded',
-          message: 'Glasses disconnected. Reconnect them, or switch to the phone microphone.',
+          message: 'Glasses disconnected. Reconnect them to carry on tuning.',
         })
       }
     }),
@@ -511,7 +508,7 @@ function installDevHarness(): void {
     tuner.ingest(bytes)
   }
 
-  // Lets a test select a tuning, since the simulator cannot press the phone
+  // Lets a test select a tuning, since the simulator cannot press the settings
   // buttons or send a long press.
   const wanted = new URLSearchParams(location.search).get('tuning')
   if (wanted) {
