@@ -338,7 +338,13 @@ export class Tuner {
       // Cents always measured against the string actually shown.
       const shown = this.tuning.strings[this.lastStringIndex ?? m.index]
       this.currentCents = centsForString(this.lastFreq, shown, this.settings.a4)
-      this.offScale = !m.inRange
+
+      // While a switch is pending the shown string is not the one being
+      // played, so its cents are meaningless: measuring the high E against A2
+      // gives 1885 cents and pins the needle to the rail under the wrong
+      // name. Show nothing for those frames instead of something wrong.
+      const settling = this.candidateFrames > 0
+      this.offScale = !m.inRange || settling
     }
   }
 
