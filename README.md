@@ -1,44 +1,32 @@
 # Headstock
 
-A guitar tuner that runs on Even Realities G2 glasses.
+A guitar tuner for Even Realities G2 smart glasses.
 
-The glasses show the note, a needle, and which way to turn the peg. The phone
-holds settings, or becomes the tuner itself if you pick the phone microphone.
+The glasses show the note, a needle and which way to turn the peg, so you can
+tune with both hands on the instrument and never look at a phone.
 
-The package id is `com.headstock.tuner`. It follows reverse-domain convention
-but is not backed by a domain, which the store does not check. It is permanent
-once submitted: changing it later means a new listing rather than an update.
+## Using it
 
-## Running it
+Play a string. Headstock names it, shows how far off it is in cents, and says
+whether to tighten or loosen. It only reports **in tune** once the pitch has
+held steady, so it will not flash green at a string that is still moving.
 
-    npm install
-    npm run dev            # dev server on :5173
-    npx evenhub qr         # scan with the Even app to load on the glasses
+| Gesture | Action |
+|---|---|
+| Tap | Lock to the current string, or unlock. Resumes when paused. |
+| Swipe up or down | Choose the string by hand |
+| Long press | Change tuning |
+| Double tap | Exit to the glasses menu |
 
-Without hardware:
+Auto-detect follows whatever you play. Lock a string when another instrument is
+audible nearby, or when a string is so far out that its neighbour would be
+named instead.
 
-    npm run sim            # desktop simulator, automation API on :9898
+The header counts strings you have finished, so tuning a whole guitar has a
+finish line. After three minutes of silence the microphone is released and the
+display offers `TAP TO RESUME`.
 
-Add `?demo=1` in a dev build to step through fixed tuning states with the
-swipe gestures.
-
-Checks:
-
-    npm run check             # everything below
-    npm run check:glyphs      # every glyph exists in the firmware font
-    npm run check:layout      # no row overflows, needle never jumps
-    npm run check:detection   # accuracy, drift, and the noise gate
-    npm run check:robustness  # long sessions, noisy rooms, string switching
-
-To package:
-
-    npm run pack           # produces headstock.ehpk
-
-## Tunings
-
-Classical, acoustic and electric guitars all tune to the same pitches, so the
-presets differ by tuning, not by instrument. Six are available, chosen from the
-glasses menu or the phone:
+### Tunings
 
 | Preset | Strings |
 |---|---|
@@ -49,120 +37,48 @@ glasses menu or the phone:
 | Open D | D2 A2 D3 F#3 A3 D4 |
 | Half step down | Eb2 Ab2 Db3 Gb3 Bb3 Eb4 |
 
-Frequencies come from the A4 reference at run time, so 442 Hz and 415 Hz stay
-exact. At A4 = 440 standard tuning is 82.407, 110.000, 146.832, 195.998,
-246.942 and 329.628 Hz.
+A capo can be set from 0 to 12; the tuner then targets and names the sounding
+notes. Reference pitch is adjustable from 415 to 445 Hz, so 442 for ensemble
+playing and 415 for baroque are exact.
 
-Auto-detect only works within half the closest string spacing, which the
-tuning decides. Standard leaves 400 cents between neighbours, but DADGAD puts
-G3 and A3 a whole tone apart, so its window is 100 cents. Lock a string that
-sits further out than that.
+### The phone
 
-The microphone gate tracks the room rather than using a fixed threshold, so a
-quiet unplugged electric and a loud steel-string both register. It follows the
-quiet moments down and may only creep up, never past the current level. An
-averaging filter is wrong here: it rises toward whatever is playing, so a
-sustained note drags the gate above its own signal and the tuner goes deaf
-after about fifteen seconds. `npm run check:detection` covers this.
+With the glasses microphone the phone is a settings panel you can put away.
+Choose the phone microphone and the phone becomes the tuner instead, with the
+glasses standing down. If the glasses are unavailable the app falls back to the
+phone rather than failing.
+
+## Accuracy
+
+Detection is YIN for an octave-safe period, refined by the phase advance
+between two overlapping windows. Worst measured error against synthetic
+plucked-string signals is 0.35 cents, and under 0.1 on most strings. In tune
+means within 1.5 cents, held for 800 ms.
 
 Everything is referenced to the glasses' 16 kHz sample clock. Crystal tolerance
-is around 50 ppm, which is 0.09 cents, so the clock is not a practical source
-of error.
+is around 50 ppm, or 0.09 cents, so the clock is not a practical source of
+error.
 
-## Pitch detection
+## Development
 
-`src/audio/pitch.ts` runs YIN over a 4096-sample window for an octave-safe
-period, then refines it from the phase advance between two overlapping windows.
-Within 8 cents of the target the window doubles to 512ms, halving estimate
-variance where precision matters. When a string is locked the search is restricted to three semitones around it,
-and frames taken while the level is falling steeply are skipped, since a
-decaying string's pitch is genuinely moving.
+    npm install
+    npm run dev                # dev server on :5173
+    npx evenhub qr             # scan with the Even app to load on the glasses
+    npm run sim                # desktop simulator, no audio input
+    npm run check              # all checks
+    npm run pack               # produces headstock.ehpk
 
-The search is never narrowed from the last detection. Doing that fed back on
-itself: a stale index narrowed the window around the wrong string, a harmonic
-inside it kept the detection fresh, and the window never widened. Two of ten
-string changes were then never detected at all, and the rest took 1.6s.
-`check:robustness` covers this.
+Add `?demo=1` in a dev build to step through fixed tuning states with the swipe
+gestures. `npm run gen:metrics` regenerates the font table after adding a
+character to any string the glasses draw.
 
-The analysis window and the noise gate both use hysteresis, since a bare
-threshold flips every frame when the value sits on it, and the two window
-lengths give slightly different estimates. The `number[]` payload format latch
-is cleared when the microphone source changes, because the two host paths need
-not agree and a latch made for one would mis-decode the other.
+The package id is `com.headstock.tuner`. It follows reverse-domain convention
+but is not backed by a domain, which the store does not check.
 
-In auto mode the label only switches after another string wins three
-consecutive frames, so an instrument playing nearby cannot flip it frame to
-frame. Strong interference still confuses auto-detect; locking a string is
-immune, since it rejects anything outside its own window.
-The refinement is not optional: YIN alone reads 4.2 cents sharp on a nylon low
-E, whose upper partials sit above exact harmonics and pull the period with them.
+### Platform notes
 
-Worst-case error against synthetic plucked-string signals is 0.37 cents on E2
-and under 0.05 elsewhere.
-
-## Display
-
-The G2 is 576x288, 4-bit greyscale, one font at one fixed size, 27 px line
-height, no CSS.
-
-Everything is text. An image container costs 0.5 to 2 seconds per frame over
-BLE, so a bitmap needle would run below 1 fps. Frames go out as
-`textContainerUpgrade`, which updates in place without flicker at 10 fps. The
-note name uses a 5x3 dot-matrix font built from block glyphs, since there is no
-font size control.
-
-Font metrics are generated by `scripts/gen-metrics.mjs` for the 57 characters
-the app can draw. Add a character to a glasses string and rerun
-`npm run gen:metrics`; `prebuild` does this for normal builds.
-
-## Behaviour
-
-A reading counts as in tune only after holding within 1.5 cents for 800 ms, and
-analysis pauses for 250 ms after each pluck to exclude the attack transient.
-The needle shows three states: `▲` live, `◆` inside the band, `█` held.
-
-The meter is one continuous scale with an expanded centre: 0.19 cents per step
-near the target, 1.9 at the edges. It replaced an auto-zoom between two scales,
-which teleported the needle 150px whenever it switched between them. The
-in-tune band is drawn as a region rather than a line, since at plus or minus
-1.5 cents it is 40px wide either side, where a centre tick was 7px and
-impossible to aim into.
-
-The needle needs to move more than one dot before it is redrawn, because a real
-string wanders a cent or two while it decays and was hopping between adjacent
-cells continuously. Smoothing tightens within 5 cents of the target and each
-reading is weighted by detection confidence.
-
-The header counts confirmed strings. After three minutes of silence the mic is
-released and the display offers `TAP TO RESUME`.
-
-| Gesture | Action |
-|---|---|
-| Tap | Lock to the current string, or unlock. Resumes when paused. |
-| Swipe up or down | Choose the string |
-| Long press | Change tuning |
-| Double tap | Exit to the glasses menu |
-
-The tuning presets are published to the OS contextual menu via `menuObject`.
-The gesture that opens that menu is not documented, so long press cycles the
-presets as a fallback and stops doing so once a menu selection has been seen.
-
-Double tap calls `shutDownPageContainer(1)`, which asks the OS to show its exit
-confirmation rather than quitting outright. Nothing is torn down at that point,
-because the user can still cancel. Confirming closes the page and the glasses
-return to their menu; the app is told via `SYSTEM_EXIT_EVENT`, which is where
-the microphone is released and listeners are removed.
-
-Rendering pauses while that dialog is up. The host draws it over the page but
-the frame loop does not stop on its own, and repainting underneath clipped the
-dialog's border. Rendering resumes on the next input or foreground event, and
-resends every row, since the host has drawn over them.
-
-A locked string is never treated as off-scale. The microphone choice decides
-which surface is the tuner, and the app falls back to the phone if the glasses
-page cannot be created.
-
-## Platform notes
+Behaviour of the G2 platform that is not discoverable from the code, and cost
+real time to find:
 
 - `createStartUpPageContainer` is one-shot. A second call is rejected with
   `invalid` (code 1) even when the layout is fine, which happens on every hot
@@ -171,45 +87,36 @@ page cannot be created.
   through `textEvent`.
 - Protobuf omits zero values, so a click's `eventType: 0` arrives as
   `undefined`, as does list index 0. Use `?? 0`.
-- Browser `localStorage` is unreliable across restarts in this WebView.
-  Settings go to `bridge.setLocalStorage`, debounced, since it shares the BLE
-  link with rendering.
-- `setBackgroundState` and `onBackgroundRestore` do not exist in SDK 0.0.14
-  despite being documented. State is rebuilt on `FOREGROUND_ENTER_EVENT`.
-- Some common glyphs are missing from the firmware font and render as nothing:
-  `▮ ▬ ╫ ▪ ▫ ✓ ░ ▓ ▀ ▐`. Check with `getAdvW` first. `npm run check:glyphs`
-  verifies every glyph the app draws.
-- Text that exactly fills a container wraps to an invisible second line.
-  Padding is measured against the composed string, because kerning at the join
-  is enough to lose a trailing word.
-- Every bridge call shares one BLE link, so they all queue through
-  `src/bridge-queue.ts`. Concurrent calls can drop the connection, and that
-  includes storage writes and microphone control, not just rendering.
-- Anything the host draws over the page, such as the exit dialog, is clipped by
-  a running frame loop. Rendering pauses while the dialog is up and while the
-  app is backgrounded, and resends every row afterwards.
-- The host emits a bare `sysEvent` carrying only `eventSource` as the page
-  comes up. Since protobuf omits zero values, that is identical to a real
-  click and cannot be told apart by shape, so input is ignored for 750 ms
+- The host emits a bare `sysEvent` carrying only `eventSource` as the page comes
+  up, which is indistinguishable from a real click. Input is ignored for 750 ms
   after startup.
-- `LONG_PRESS_EVENT` (9), `LONG_PRESS_RELEASE_EVENT` (10) and the whole
-  contextual-menu API exist in SDK 0.0.14 but are absent from the published
-  documentation, which stops at event 8.
+- Anything the host draws over the page, such as the exit dialog, is clipped by
+  a running frame loop. Rendering pauses while it is up and while the app is
+  backgrounded.
+- Every bridge call shares one BLE link, so they all queue through
+  `src/bridge-queue.ts`. Concurrent calls can drop the connection, including
+  storage writes and microphone control.
+- Browser `localStorage` is unreliable across restarts in this WebView.
+- `setBackgroundState` and `onBackgroundRestore` do not exist in SDK 0.0.14
+  despite being documented, and `LONG_PRESS_EVENT` and the contextual-menu API
+  exist but are absent from it.
+- Some glyphs are missing from the firmware font and render as nothing:
+  `▮ ▬ ╫ ▪ ▫ ✓ ░ ▓ ▀ ▐`. `npm run check:glyphs` verifies every glyph drawn.
+- Text that exactly fills a container wraps to an invisible second line, so
+  padding is measured against the composed string, kerning included.
 
-## Files
+### Files
 
     src/main.ts               bridge lifecycle, mic, input, persistence
-    src/bridge-queue.ts       serialises every call over the BLE link
     src/tuner.ts              state machine: audio in, view model out
+    src/bridge-queue.ts       serialises every call over the BLE link
     src/config.ts             shared thresholds
-    src/audio/pitch.ts        YIN and phase refinement
-    src/audio/stream.ts       PCM decoding, ring buffer, smoothing
-    src/tuning/notes.ts       note maths and string table
-    src/glasses/blockfont.ts  5x3 dot-matrix font
-    src/glasses/display.ts    layout, row builders, renderer
-    src/glasses/metrics.ts    generated font metrics
+    src/audio/                pitch detection, PCM decoding, smoothing
+    src/tuning/notes.ts       note maths, tunings, capo
+    src/glasses/              block font, layout, renderer, font metrics
     src/phone/ui.ts           settings panel and phone tuner
 
-`advance()` mutates detection state and `view()` is a pure read. Keeping them
-separate stops a gesture or settings change from running a second detection
-pass and pushing a duplicate reading into the smoother.
+The checks in `scripts/` guard the failures that have actually happened here:
+row overflow, needle discontinuity, pitch drift, a noise gate that closed on a
+sustained note, and a search that fed back on itself. Each has been verified to
+fail when its bug is reintroduced.
