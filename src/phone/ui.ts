@@ -88,7 +88,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     <div class="legend" id="legend">
       <b>Tap</b><span>Lock to the current string, or resume when paused</span>
       <b>Swipe</b><span>Choose the string</span>
-      <b>Long press</b><span>Change tuning</span>
+      <b>Tap, then hold</b><span>Open the side menu to change tuning</span>
       <b>Double tap</b><span>Exit to the glasses menu</span>
     </div>
   `

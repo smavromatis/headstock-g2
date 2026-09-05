@@ -7,7 +7,8 @@ tune with both hands on the instrument and never look at a phone.
 
 ![The tuner as you see it](docs/glasses-tuning.jpg)
 
-Hold to change tuning without putting the guitar down.
+Tap, then press and hold to open the side menu and change tuning, without
+putting the guitar down.
 
 ![Choosing a tuning](docs/glasses-menu.jpg)
 
@@ -21,7 +22,7 @@ held steady, so it will not flash at a string that is still moving.
 |---|---|
 | Tap | Lock to the current string, or unlock. Resumes when paused. |
 | Swipe up or down | Choose the string by hand |
-| Long press | Change tuning |
+| Tap, then press and hold | Open the side menu to change tuning |
 | Double tap | Exit to the glasses menu |
 
 Auto-detect follows whatever you play. Lock a string when another instrument is

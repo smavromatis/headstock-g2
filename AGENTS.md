@@ -98,10 +98,11 @@ character to any string the glasses render and rerun `npm run gen:metrics`;
 - `setBackgroundState` and `onBackgroundRestore` do not exist in SDK 0.0.14
   despite being documented, while `LONG_PRESS_EVENT` and the contextual-menu
   API exist but are absent from it.
-- The OS opens the contextual menu on a long press and renders `menuObject`
-  itself, confirmed on hardware. The app does not handle long press: the
-  gesture belongs to the firmware, and acting on it as well would change the
-  tuning underneath the menu the user is reading.
+- The OS opens the contextual menu on a tap followed by a press and hold, and
+  renders `menuObject` itself. Confirmed on hardware; the gesture is documented
+  nowhere. The app does not handle long press at all: it belongs to the
+  firmware, and acting on it as well changed the tuning underneath the menu the
+  user was reading.
 - Some glyphs are missing from the firmware font and render as nothing:
   `▮ ▬ ╫ ▪ ▫ ✓ ░ ▓ ▀ ▐`. Check with `getAdvW` before using any character.
 - Text that exactly fills a container wraps to an invisible second line. Padding
