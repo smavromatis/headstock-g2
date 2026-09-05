@@ -80,10 +80,7 @@ async function main(): Promise<void> {
   teardown.push(bridge.onEvenHubEvent(onHubEvent))
   teardown.push(
     bridge.onDeviceStatusChanged((status) => {
-      phone?.setDevice({
-        battery: status.batteryLevel ?? null,
-        connected: status.isConnected(),
-      })
+      phone?.setDevice({ battery: status.batteryLevel ?? null })
     }),
   )
 

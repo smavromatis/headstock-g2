@@ -19,7 +19,7 @@ export interface PhoneUi {
   setReading(view: TunerView, surface: Surface): void
   setSettings(settings: TunerSettings): void
   setStatus(status: { connection: 'ok' | 'degraded' | 'error'; message: string }): void
-  setDevice(device: { battery: number | null; connected: boolean }): void
+  setDevice(device: { battery: number | null }): void
   setMic(mic: { active: boolean; source: AudioInputSource }): void
   setSurface(surface: Surface): void
 }
@@ -74,8 +74,8 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
         </div>
       </div>
       <div class="row">
-        <span class="row-label">Glasses</span>
-        <span class="val" id="device" style="font-size:15px">&mdash;</span>
+        <span class="row-label">Battery</span>
+        <span class="val" id="battery" style="font-size:15px">&mdash;</span>
       </div>
     </div>
 
@@ -250,11 +250,9 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     },
 
     setDevice(device) {
-      el('device').textContent = device.connected
-        ? device.battery === null
-          ? 'connected'
-          : `connected · ${device.battery}%`
-        : 'not connected'
+      // Connection state is already implied by the masthead, which cannot read
+      // "listening · glasses" through glasses that are not connected.
+      el('battery').textContent = device.battery === null ? '—' : `${device.battery}%`
     },
 
     setMic(mic) {
