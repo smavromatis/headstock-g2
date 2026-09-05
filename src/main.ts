@@ -62,9 +62,6 @@ async function main(): Promise<void> {
 
   bridge = await waitForEvenAppBridge()
 
-  // Fires exactly once, so it is registered before anything can miss it.
-  teardown.push(bridge.onLaunchSource(() => {}))
-
   await loadSettings()
 
   glassesAvailable = await setUpGlasses()

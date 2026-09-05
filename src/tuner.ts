@@ -97,20 +97,6 @@ export class Tuner {
     return this.phase
   }
 
-  get locked(): boolean {
-    return this.lockedString !== null
-  }
-
-  get tunedCount(): number {
-    return this.tuned.filter(Boolean).length
-  }
-
-  lock(s: GuitarString | null): void {
-    this.lockedString = s
-    this.resetSettle()
-    this.smoother.reset()
-  }
-
   toggleLock(): void {
     if (this.lockedString) this.lockedString = null
     else if (this.lastStringIndex !== null) this.lockedString = STANDARD_TUNING[this.lastStringIndex]
