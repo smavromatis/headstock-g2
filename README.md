@@ -5,10 +5,9 @@ A guitar tuner that runs on Even Realities G2 glasses.
 The glasses show the note, a needle, and which way to turn the peg. The phone
 holds settings, or becomes the tuner itself if you pick the phone microphone.
 
-Before submitting to the Even Hub store, set `package_id` in `app.json` (it is
-the placeholder `com.example.headstock`) and `author` in `package.json`. The
-package id is permanent and follows reverse-domain convention, so use a domain
-you own.
+The package id is `com.headstock.tuner`. It follows reverse-domain convention
+but is not backed by a domain, which the store does not check. It is permanent
+once submitted: changing it later means a new listing rather than an update.
 
 ## Running it
 

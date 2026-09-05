@@ -15,7 +15,6 @@
     "check:detection": "esbuild scripts/check-detection.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-detection.mjs --log-level=error && node node_modules/.cache/check-detection.mjs"
   },
   "keywords": [],
-  "author": "",
   "license": "UNLICENSED",
   "type": "module",
   "devDependencies": {
