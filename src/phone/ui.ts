@@ -14,6 +14,7 @@ export interface PhoneUiHandlers {
   onMicSourceChange(source: AudioInputSource): void
   onResetSession(): void
   onTuningChange(id: string): void
+  onCapoChange(semitones: number): void
 }
 
 export interface PhoneUi {
@@ -64,6 +65,14 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
         <div class="presets" id="tunings"></div>
       </div>
       <div class="row">
+        <span class="row-label">Capo</span>
+        <div class="row-control">
+          <button class="step" type="button" id="capo-down" aria-label="Lower capo">&minus;</button>
+          <span class="val" id="capo">Off</span>
+          <button class="step" type="button" id="capo-up" aria-label="Raise capo">+</button>
+        </div>
+      </div>
+      <div class="row">
         <span class="row-label">Reference</span>
         <div class="row-control">
           <button class="step" type="button" id="a4-down" aria-label="Lower reference pitch">&minus;</button>
@@ -105,7 +114,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   const scaleLo = el('scale-lo')
   const scaleHi = el('scale-hi')
 
-  let settings: TunerSettings = { a4: 440, tuningId: TUNINGS[0].id }
+  let settings: TunerSettings = { a4: 440, tuningId: TUNINGS[0].id, capo: 0 }
   let micActive = false
   let micSource: AudioInputSource = AudioInputSource.Glasses
   let currentSurface: Surface = 'glasses'
@@ -123,10 +132,14 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   const pipsEl = el('pips')
   let pips: HTMLElement[] = []
 
-  /** Rebuilt on a tuning change, since the labels and count can differ. */
-  function buildPips(tuningId: string): void {
+  /** Rebuilt when the sounding strings change, from a tuning or a capo. */
+  let pipLabels = ''
+  function buildPips(strings: ReadonlyArray<{ label: string }>): void {
+    const key = strings.map((s) => s.label).join(' ')
+    if (key === pipLabels) return
+    pipLabels = key
     pipsEl.innerHTML = ''
-    pips = (TUNINGS.find((t) => t.id === tuningId) ?? TUNINGS[0]).strings.map((s) => {
+    pips = strings.map((s) => {
       const d = document.createElement('div')
       d.className = 'pip'
       d.innerHTML = `<i></i>${s.label}`
@@ -157,6 +170,14 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   el('a4-down').addEventListener('click', () => applyA4(settings.a4 - 1))
   el('a4-up').addEventListener('click', () => applyA4(settings.a4 + 1))
 
+  const applyCapo = (next: number) => {
+    settings = { ...settings, capo: clamp(Math.round(next), 0, 12) }
+    paintSettings()
+    handlers.onCapoChange(settings.capo)
+  }
+  el('capo-down').addEventListener('click', () => applyCapo(settings.capo - 1))
+  el('capo-up').addEventListener('click', () => applyCapo(settings.capo + 1))
+
   const micButtons = Array.from(el('mic').querySelectorAll<HTMLButtonElement>('button'))
   for (const b of micButtons) {
     b.addEventListener('click', () => {
@@ -169,6 +190,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
 
   function paintSettings(): void {
     el('a4').textContent = String(settings.a4)
+    el('capo').textContent = settings.capo === 0 ? 'Off' : `Fret ${settings.capo}`
     for (const b of tuningsEl.querySelectorAll<HTMLButtonElement>('.preset')) {
       b.setAttribute('aria-pressed', String(b.dataset.tuning === settings.tuningId))
     }
@@ -191,7 +213,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     stateEl.dataset.live = 'true'
   }
 
-  buildPips(settings.tuningId)
+  buildPips(TUNINGS[0].strings)
   paintSettings()
 
   return {
@@ -208,6 +230,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
         scaleHi.textContent = `+${view.meterRange}`
       }
 
+      buildPips(view.tuning.strings)
       for (let i = 0; i < pips.length; i++) {
         pips[i].dataset.done = String(view.tuned[i] === true)
         pips[i].dataset.active = String(i === view.stringIndex && !view.offScale)
@@ -267,9 +290,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     },
 
     setSettings(next) {
-      const changed = next.tuningId !== settings.tuningId
       settings = { ...next }
-      if (changed) buildPips(settings.tuningId)
       paintSettings()
     },
 

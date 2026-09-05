@@ -69,6 +69,22 @@ export function tuningById(id: string): Tuning {
   return TUNINGS.find((t) => t.id === id) ?? DEFAULT_TUNING
 }
 
+/**
+ * Shifts every string up by `capo` semitones.
+ *
+ * A capo raises the pitch of every open string, so the tuner must target and
+ * name the sounding notes, not the nominal ones. Sharps are used throughout,
+ * since a capo has no key to spell towards.
+ */
+export function transposeTuning(tuning: Tuning, capo: number): Tuning {
+  if (capo <= 0) return tuning
+  return {
+    id: tuning.id,
+    name: tuning.name,
+    strings: tuning.strings.map((s) => stringFromMidi(s.midi + capo, 'sharp')),
+  }
+}
+
 /** Equal-tempered frequency of a MIDI note for a given A4 reference. */
 export function midiToFreq(midi: number, a4: number): number {
   return a4 * Math.pow(2, (midi - 69) / 12)

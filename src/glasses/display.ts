@@ -116,11 +116,12 @@ export function buildHeaderRow(view: TunerView): string {
   const done = view.tuned.filter(Boolean).length
   const mode = view.locked ? 'LOCKED' : 'AUTO'
   const left = `${mode}   ${done}/${view.tuning.strings.length}`
-  const preset = view.tuning.id === 'standard' ? '' : `${view.tuning.name}   `
+  const preset = view.tuning.id === 'standard' && !view.capo ? '' : `${view.tuning.name}   `
+  const capo = view.capo ? `CAPO ${view.capo}   ` : ''
   const state =
     view.phase === 'micError' ? 'NO MIC' : view.phase === 'idle' ? 'IDLE' :
     view.phase === 'reading' ? '●' : '○'
-  return padBetween(left, `${preset}A4 ${view.a4.toFixed(0)}   ${state}`, ROW_W)
+  return padBetween(left, `${preset}${capo}A4 ${view.a4.toFixed(0)}   ${state}`, ROW_W)
 }
 
 export function buildReadoutRow(view: TunerView): string {

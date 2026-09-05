@@ -64,6 +64,12 @@ let exitDialogOpenedAt = 0
  */
 let backgrounded = false
 
+/**
+ * Assumed true until the host says otherwise: onDeviceStatusChanged never
+ * fires in the simulator, and defaulting to false would mean never rendering.
+ */
+let glassesConnected = true
+
 /** Safety net, in case cancelling the dialog reports nothing at all. */
 const EXIT_DIALOG_TIMEOUT_MS = 20000
 const SETTINGS_KEY = 'headstock.settings.v1'
@@ -104,6 +110,11 @@ async function main(): Promise<void> {
       persistSettings()
       redrawGlasses()
     },
+    onCapoChange: (semitones) => {
+      tuner.setCapo(semitones)
+      persistSettings()
+      redrawGlasses()
+    },
   })
 
   bridge = await waitForEvenAppBridge()
@@ -127,6 +138,23 @@ async function main(): Promise<void> {
   teardown.push(
     bridge.onDeviceStatusChanged((status) => {
       phone?.setDevice({ battery: status.batteryLevel ?? null })
+
+      // Without this, a disconnect leaves every render to time out at 2.5s
+      // each: the app looks frozen and keeps draining the phone for nothing.
+      const connected = status.isConnected()
+      if (connected === glassesConnected) return
+      glassesConnected = connected
+
+      if (connected) {
+        renderer?.invalidate()
+        phone?.setStatus({ connection: 'ok', message: '' })
+        paint()
+      } else {
+        phone?.setStatus({
+          connection: 'degraded',
+          message: 'Glasses disconnected. Reconnect them, or switch to the phone microphone.',
+        })
+      }
     }),
   )
 
@@ -218,8 +246,9 @@ async function restartMic(): Promise<void> {
 async function goIdle(): Promise<void> {
   if (!bridge || tuner.currentPhase === 'idle') return
   tuner.setPhase('idle')
+  // Progress is kept: a pause is not a reason to discard the strings already
+  // tuned.
   tuner.reset()
-  tuner.clearSession()
   await queue.run(() => bridge!.audioControl(false))
   phone?.setMic({ active: false, source: micSource })
   paint()
@@ -373,7 +402,7 @@ function paint(): void {
   // The host owns the display while its exit dialog is up, and so does
   // whatever replaced us when we were backgrounded. Drawing underneath either
   // one paints over what the user is actually looking at.
-  if (!exitDialogOpen && !backgrounded) {
+  if (!exitDialogOpen && !backgrounded && glassesConnected) {
     if (surface === 'glasses') renderer?.render(view)
     else renderer?.renderStandby()
   }
@@ -421,8 +450,10 @@ async function loadSettings(): Promise<void> {
       tuner.settings = {
         a4: clamp(parsed.a4 ?? DEFAULT_SETTINGS.a4, 415, 445),
         tuningId: parsed.tuningId ?? DEFAULT_SETTINGS.tuningId,
+        capo: clamp(parsed.capo ?? DEFAULT_SETTINGS.capo, 0, 12),
       }
       tuner.setTuning(tuner.settings.tuningId)
+      tuner.setCapo(tuner.settings.capo)
     }
   } catch {
     tuner.settings = { ...DEFAULT_SETTINGS }

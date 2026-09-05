@@ -13,6 +13,7 @@ import {
   DEFAULT_TUNING,
   centsForString,
   matchString,
+  transposeTuning,
   TUNINGS,
   tuningById,
   type GuitarString,
@@ -24,8 +25,11 @@ import {
   FINE_ENTER_CENTS,
   FINE_EXIT_CENTS,
   IDLE_TIMEOUT_MS,
+  ADVANCE_DELAY_MS,
   GATE_MARGIN,
+  HZ_UPDATE_MS,
   IN_TUNE_CENTS,
+  MAX_CAPO,
   METER_COARSE_CENTS,
   MIN_GATE,
   NOISE_CREEP,
@@ -42,9 +46,15 @@ export type Surface = 'glasses' | 'phone'
 export interface TunerSettings {
   a4: number
   tuningId: string
+  /** Capo position in semitones; 0 is no capo. */
+  capo: number
 }
 
-export const DEFAULT_SETTINGS: TunerSettings = { a4: 440, tuningId: DEFAULT_TUNING.id }
+export const DEFAULT_SETTINGS: TunerSettings = {
+  a4: 440,
+  tuningId: DEFAULT_TUNING.id,
+  capo: 0,
+}
 
 export interface TunerView {
   phase: TunerPhase
@@ -66,7 +76,9 @@ export interface TunerView {
   meterRange: number
   /** Which strings have been confirmed in tune this session. */
   tuned: readonly boolean[]
+  /** The tuning as it sounds, with any capo already applied. */
   tuning: Tuning
+  capo: number
 }
 
 export class Tuner {
@@ -93,8 +105,16 @@ export class Tuner {
   // Meter scale
   private fine = false
 
+  /** The preset as chosen; `tuning` is this with the capo applied. */
+  private basePreset: Tuning = DEFAULT_TUNING
   private tuning: Tuning = DEFAULT_TUNING
   private tuned: boolean[] = this.tuning.strings.map(() => false)
+
+  // Displayed frequency, updated on its own slower clock.
+  private shownFreq: number | null = null
+  private shownFreqAt = 0
+
+  private confirmedAt = 0
 
   // Adaptive noise gate, tracking the room rather than a fixed threshold.
   private noiseFloor = MIN_GATE
@@ -105,20 +125,43 @@ export class Tuner {
     return this.tuning
   }
 
-  /** Switches tuning and clears anything measured against the old one. */
   setTuning(id: string): void {
-    if (id === this.tuning.id) return
-    this.tuning = tuningById(id)
-    this.settings.tuningId = this.tuning.id
+    this.applyTuning(tuningById(id), this.settings.capo)
+  }
+
+  /** Sets the capo position in semitones. */
+  setCapo(semitones: number): void {
+    const capo = Math.max(0, Math.min(MAX_CAPO, Math.round(semitones)))
+    if (capo === this.settings.capo) return
+    this.applyTuning(this.basePreset, capo)
+  }
+
+  /**
+   * Rebuilds the sounding tuning from a preset and capo.
+   *
+   * Confirmed strings survive if the new tuning still contains the same note:
+   * switching standard to drop D keeps five of six, and adding a capo keeps
+   * none, which is correct in both cases.
+   */
+  private applyTuning(preset: Tuning, capo: number): void {
+    const previous = this.tuning.strings.map((s, i) => ({ midi: s.midi, done: this.tuned[i] }))
+
+    this.basePreset = preset
+    this.settings.tuningId = preset.id
+    this.settings.capo = capo
+    this.tuning = transposeTuning(preset, capo)
+
+    this.tuned = this.tuning.strings.map(
+      (s) => previous.find((p) => p.midi === s.midi)?.done ?? false,
+    )
     this.lockedString = null
-    this.clearSession()
     this.reset()
   }
 
   /** Next preset, for the long-press fallback when no menu is available. */
   cycleTuning(): void {
     const order = TUNINGS.map((t) => t.id)
-    const next = order[(order.indexOf(this.tuning.id) + 1) % order.length]
+    const next = order[(order.indexOf(this.basePreset.id) + 1) % order.length]
     this.setTuning(next)
   }
 
@@ -211,6 +254,8 @@ export class Tuner {
 
     this.updateMatch()
     this.updateSettle(now)
+    this.advanceLock(now)
+    this.updateShownFreq(now)
     this.updatePhase(now)
   }
 
@@ -241,6 +286,7 @@ export class Tuner {
       if (this.inToleranceSince === null) this.inToleranceSince = now
       if (!this.confirmed && now - this.inToleranceSince >= CONFIRM_HOLD_MS) {
         this.confirmed = true
+        this.confirmedAt = now
         if (this.lastStringIndex !== null) this.tuned[this.lastStringIndex] = true
       }
     } else {
@@ -252,6 +298,47 @@ export class Tuner {
       const abs = Math.abs(c)
       if (!this.fine && abs <= FINE_ENTER_CENTS) this.fine = true
       else if (this.fine && abs > FINE_EXIT_CENTS) this.fine = false
+    }
+  }
+
+  /**
+   * The displayed frequency, on a slower clock than the needle.
+   *
+   * A stale reading clears immediately, so the display never holds a frequency
+   * for a string that has stopped sounding.
+   */
+  private updateShownFreq(now: number): void {
+    if (this.lastFreq === null) {
+      this.shownFreq = null
+      return
+    }
+    if (this.shownFreq === null || now - this.shownFreqAt >= HZ_UPDATE_MS) {
+      this.shownFreq = this.lastFreq
+      this.shownFreqAt = now
+    }
+  }
+
+  /**
+   * Moves the lock to the next unconfirmed string once one is done, so a whole
+   * guitar can be tuned without touching the glasses between strings.
+   *
+   * Only in locked mode: auto-detect already follows whatever is played. The
+   * delay leaves the confirmation on screen long enough to be read.
+   */
+  private advanceLock(now: number): void {
+    if (!this.lockedString || !this.confirmed) return
+    if (now - this.confirmedAt < ADVANCE_DELAY_MS) return
+
+    const strings = this.tuning.strings
+    const from = strings.indexOf(this.lockedString)
+    for (let step = 1; step <= strings.length; step++) {
+      const i = (from + step) % strings.length
+      if (!this.tuned[i]) {
+        this.lockedString = strings[i]
+        this.resetSettle()
+        this.smoother.reset()
+        return
+      }
     }
   }
 
@@ -282,7 +369,7 @@ export class Tuner {
       stringIndex: this.lastStringIndex,
       locked: this.lockedString !== null,
       cents,
-      freq: this.lastFreq,
+      freq: this.shownFreq,
       a4: this.settings.a4,
       offScale: this.offScale,
       inTolerance,
@@ -291,12 +378,14 @@ export class Tuner {
       meterRange: this.fine ? METER_FINE_CENTS : METER_COARSE_CENTS,
       tuned: this.tuned,
       tuning: this.tuning,
+      capo: this.settings.capo,
     }
   }
 
   reset(): void {
     this.ring.clear()
     this.smoother.reset()
+    this.shownFreq = null
     this.lastFreq = null
     this.lastStringIndex = null
     this.currentCents = null

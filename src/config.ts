@@ -46,6 +46,21 @@ export const NOISE_FALL = 0.25
  */
 export const NOISE_CREEP = 1.0008
 
+/**
+ * How often the displayed frequency may change.
+ *
+ * Its last digit churns every frame, which forced a resend of the readout row
+ * ten times a second: measured at 6.1 of the 10.6 BLE writes per second during
+ * tuning. Nothing is acted on from that digit, so it updates twice a second.
+ */
+export const HZ_UPDATE_MS = 500
+
+/** Pause after a string confirms before the lock moves to the next one. */
+export const ADVANCE_DELAY_MS = 1200
+
+/** Highest capo position offered. */
+export const MAX_CAPO = 12
+
 /** Hysteresis: equal thresholds would make the scale flap on the boundary. */
 export const FINE_ENTER_CENTS = 8
 export const FINE_EXIT_CENTS = 12
