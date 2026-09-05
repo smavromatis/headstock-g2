@@ -18,8 +18,14 @@
     "check:robustness": "esbuild scripts/check-robustness.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-robustness.mjs --log-level=error && node node_modules/.cache/check-robustness.mjs",
     "check:docs": "node scripts/check-docs.mjs"
   },
-  "keywords": [],
-  "license": "UNLICENSED",
+  "keywords": [
+    "guitar",
+    "tuner",
+    "even-realities",
+    "g2",
+    "smart-glasses"
+  ],
+  "license": "MIT",
   "type": "module",
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.1.14",
@@ -32,5 +38,12 @@
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.14"
   },
-  "private": true
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smavromatis/headstock-g2.git"
+  },
+  "homepage": "https://github.com/smavromatis/headstock-g2#readme",
+  "bugs": {
+    "url": "https://github.com/smavromatis/headstock-g2/issues"
+  }
 }
