@@ -27,6 +27,17 @@ export const IDLE_TIMEOUT_MS = 3 * 60 * 1000
 export const METER_COARSE_CENTS = 50
 export const METER_FINE_CENTS = 10
 
+/**
+ * Noise gate. The floor tracks the room and the gate sits a margin above it,
+ * so an unplugged electric and a loud dreadnought both work without a setting.
+ * MIN_GATE stops a silent room from opening the gate to nothing.
+ */
+export const MIN_GATE = 0.0015
+export const GATE_MARGIN = 4
+/** Floor falls quickly toward a quieter room, rises slowly. */
+export const NOISE_FALL = 0.25
+export const NOISE_RISE = 0.002
+
 /** Hysteresis: equal thresholds would make the scale flap on the boundary. */
 export const FINE_ENTER_CENTS = 8
 export const FINE_EXIT_CENTS = 12

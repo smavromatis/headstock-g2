@@ -4,7 +4,7 @@
  */
 
 import { AudioInputSource } from '@evenrealities/even_hub_sdk'
-import { STANDARD_TUNING } from '../tuning/notes'
+import { TUNINGS } from '../tuning/notes'
 import { IN_TUNE_CENTS } from '../config'
 import type { TunerSettings, TunerView, Surface } from '../tuner'
 import './styles.css'
@@ -13,6 +13,7 @@ export interface PhoneUiHandlers {
   onA4Change(a4: number): void
   onMicSourceChange(source: AudioInputSource): void
   onResetSession(): void
+  onTuningChange(id: string): void
 }
 
 export interface PhoneUi {
@@ -58,6 +59,10 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     <div class="notice" id="notice"></div>
 
     <div class="rows">
+      <div class="row row-stack">
+        <span class="row-label">Tuning</span>
+        <div class="presets" id="tunings"></div>
+      </div>
       <div class="row">
         <span class="row-label">Reference</span>
         <div class="row-control">
@@ -99,7 +104,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
   const scaleLo = el('scale-lo')
   const scaleHi = el('scale-hi')
 
-  let settings: TunerSettings = { a4: 440 }
+  let settings: TunerSettings = { a4: 440, tuningId: TUNINGS[0].id }
   let micActive = false
   let micSource: AudioInputSource = AudioInputSource.Glasses
   let currentSurface: Surface = 'glasses'
@@ -115,19 +120,36 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
 
   // --- session pips ------------------------------------------------------
   const pipsEl = el('pips')
-  const pips = STANDARD_TUNING.map((s) => {
-    const d = document.createElement('div')
-    d.className = 'pip'
-    d.innerHTML = `<i></i>${s.label}`
-    pipsEl.appendChild(d)
-    return d
-  })
+  let pips: HTMLElement[] = []
+
+  /** Rebuilt on a tuning change, since the labels and count can differ. */
+  function buildPips(tuningId: string): void {
+    pipsEl.innerHTML = ''
+    pips = (TUNINGS.find((t) => t.id === tuningId) ?? TUNINGS[0]).strings.map((s) => {
+      const d = document.createElement('div')
+      d.className = 'pip'
+      d.innerHTML = `<i></i>${s.label}`
+      pipsEl.appendChild(d)
+      return d
+    })
+  }
+
+  const tuningsEl = el('tunings')
+  for (const t of TUNINGS) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = 'preset'
+    b.dataset.tuning = t.id
+    b.textContent = t.name
+    b.addEventListener('click', () => handlers.onTuningChange(t.id))
+    tuningsEl.appendChild(b)
+  }
 
   el('reset').addEventListener('click', () => handlers.onResetSession())
 
   // --- controls ----------------------------------------------------------
   const applyA4 = (next: number) => {
-    settings = { a4: clamp(Math.round(next), A4_MIN, A4_MAX) }
+    settings = { ...settings, a4: clamp(Math.round(next), A4_MIN, A4_MAX) }
     paintSettings()
     handlers.onA4Change(settings.a4)
   }
@@ -146,6 +168,9 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
 
   function paintSettings(): void {
     el('a4').textContent = String(settings.a4)
+    for (const b of tuningsEl.querySelectorAll<HTMLButtonElement>('.preset')) {
+      b.setAttribute('aria-pressed', String(b.dataset.tuning === settings.tuningId))
+    }
   }
 
   /** The gesture legend is meaningless when the phone is the tuner. */
@@ -165,6 +190,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     stateEl.dataset.live = 'true'
   }
 
+  buildPips(settings.tuningId)
   paintSettings()
 
   return {
@@ -210,7 +236,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
         return
       }
 
-      const s = STANDARD_TUNING[view.stringIndex!]
+      const s = view.tuning.strings[view.stringIndex!]
       const cents = view.cents!
 
       noteEl.dataset.idle = 'false'
@@ -240,7 +266,9 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
     },
 
     setSettings(next) {
+      const changed = next.tuningId !== settings.tuningId
       settings = { ...next }
+      if (changed) buildPips(settings.tuningId)
       paintSettings()
     },
 

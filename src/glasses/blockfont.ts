@@ -18,8 +18,8 @@ export const GLYPH_ROWS = 5
 export const GLYPH_WIDTH_PX = GLYPH_COLS * CELL_PX // 60
 
 /**
- * Only what standard classical tuning can actually produce: the note letters
- * E A D G B, the octaves 2-4, a dash for "no reading", and a blank.
+ * What the tuning presets can produce: note letters, both accidentals, the
+ * octaves a guitar reaches, a dash for "no reading", and a blank.
  */
 const GLYPHS: Record<string, string[]> = {
   A: ['111', '101', '111', '101', '101'],
@@ -29,6 +29,8 @@ const GLYPHS: Record<string, string[]> = {
   E: ['111', '100', '111', '100', '111'],
   F: ['111', '100', '111', '100', '100'],
   G: ['111', '100', '101', '101', '111'],
+  '#': ['101', '111', '101', '111', '101'],
+  b: ['100', '100', '110', '101', '110'],
   '2': ['111', '001', '111', '100', '111'],
   '3': ['111', '001', '111', '001', '111'],
   '4': ['101', '101', '111', '001', '001'],

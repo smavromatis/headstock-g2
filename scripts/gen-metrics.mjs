@@ -11,7 +11,7 @@ import { getTextWidth } from '@evenrealities/pretext'
 import { writeFileSync } from 'node:fs'
 
 /** Every character the glasses layout can produce. */
-const CHARSET = ' ABCDEFGHIJKLMNOPQRSTUVWXYZz0123456789.+-/[]·═─╪┼♭♯┬█◆▲●○'
+const CHARSET = ' ABCDEFGHIJKLMNOPQRSTUVWXYZbz0123456789.+-/#[]·═─╪┼♭♯┬█◆▲●○'
 
 const chars = [...CHARSET]
 const widths = chars.map((c) => [c, getTextWidth(c)])
@@ -69,5 +69,5 @@ export function textWidth(s: string): number {
 
 writeFileSync('src/glasses/metrics.ts', src)
 console.log(
-  `metrics.ts: ${chars.length} chars, ${deltaEntries.reduce((t, [, p]) => t + p.length / 2, 0)} kern pairs, ${(src.length / 1024).toFixed(1)} KB source`,
+  `metrics.ts: ${chars.length} chars, ${deltaEntries.reduce((t, [, p]) => t + p.length, 0)} kern pairs, ${(src.length / 1024).toFixed(1)} KB source`,
 )

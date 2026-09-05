@@ -9,15 +9,27 @@
 
 import { detectPitch, rmsOf, WINDOW_SIZE } from './audio/pitch'
 import { AudioRingBuffer, PitchSmoother, SAMPLE_RATE, decodePcm } from './audio/stream'
-import { STANDARD_TUNING, centsForString, matchString, type GuitarString } from './tuning/notes'
+import {
+  DEFAULT_TUNING,
+  centsForString,
+  matchString,
+  TUNINGS,
+  tuningById,
+  type GuitarString,
+  type Tuning,
+} from './tuning/notes'
 import {
   ATTACK_SKIP_MS,
   CONFIRM_HOLD_MS,
   FINE_ENTER_CENTS,
   FINE_EXIT_CENTS,
   IDLE_TIMEOUT_MS,
+  GATE_MARGIN,
   IN_TUNE_CENTS,
   METER_COARSE_CENTS,
+  MIN_GATE,
+  NOISE_FALL,
+  NOISE_RISE,
   METER_FINE_CENTS,
   READING_HOLD_MS,
 } from './config'
@@ -29,9 +41,10 @@ export type Surface = 'glasses' | 'phone'
 
 export interface TunerSettings {
   a4: number
+  tuningId: string
 }
 
-export const DEFAULT_SETTINGS: TunerSettings = { a4: 440 }
+export const DEFAULT_SETTINGS: TunerSettings = { a4: 440, tuningId: DEFAULT_TUNING.id }
 
 export interface TunerView {
   phase: TunerPhase
@@ -53,6 +66,7 @@ export interface TunerView {
   meterRange: number
   /** Which strings have been confirmed in tune this session. */
   tuned: readonly boolean[]
+  tuning: Tuning
 }
 
 export class Tuner {
@@ -79,9 +93,34 @@ export class Tuner {
   // Meter scale
   private fine = false
 
-  private tuned: boolean[] = STANDARD_TUNING.map(() => false)
+  private tuning: Tuning = DEFAULT_TUNING
+  private tuned: boolean[] = this.tuning.strings.map(() => false)
+
+  // Adaptive noise gate, tracking the room rather than a fixed threshold.
+  private noiseFloor = MIN_GATE
 
   settings: TunerSettings = { ...DEFAULT_SETTINGS }
+
+  get currentTuning(): Tuning {
+    return this.tuning
+  }
+
+  /** Switches tuning and clears anything measured against the old one. */
+  setTuning(id: string): void {
+    if (id === this.tuning.id) return
+    this.tuning = tuningById(id)
+    this.settings.tuningId = this.tuning.id
+    this.lockedString = null
+    this.clearSession()
+    this.reset()
+  }
+
+  /** Next preset, for the long-press fallback when no menu is available. */
+  cycleTuning(): void {
+    const order = TUNINGS.map((t) => t.id)
+    const next = order[(order.indexOf(this.tuning.id) + 1) % order.length]
+    this.setTuning(next)
+  }
 
   /** Feeds one audio event payload. */
   ingest(rawPcm: unknown): void {
@@ -99,24 +138,26 @@ export class Tuner {
 
   toggleLock(): void {
     if (this.lockedString) this.lockedString = null
-    else if (this.lastStringIndex !== null) this.lockedString = STANDARD_TUNING[this.lastStringIndex]
-    else this.lockedString = STANDARD_TUNING[0]
+    else if (this.lastStringIndex !== null)
+      this.lockedString = this.tuning.strings[this.lastStringIndex]
+    else this.lockedString = this.tuning.strings[0]
     this.resetSettle()
   }
 
   step(direction: 1 | -1): void {
+    const strings = this.tuning.strings
     const current = this.lockedString
-      ? STANDARD_TUNING.indexOf(this.lockedString)
+      ? strings.indexOf(this.lockedString)
       : (this.lastStringIndex ?? 0)
-    const next = Math.max(0, Math.min(STANDARD_TUNING.length - 1, current + direction))
-    this.lockedString = STANDARD_TUNING[next]
+    const next = Math.max(0, Math.min(strings.length - 1, current + direction))
+    this.lockedString = strings[next]
     this.resetSettle()
     this.smoother.reset()
   }
 
   /** Clears the six-string session progress. */
   clearSession(): void {
-    this.tuned = STANDARD_TUNING.map(() => false)
+    this.tuned = this.tuning.strings.map(() => false)
   }
 
   /**
@@ -129,18 +170,24 @@ export class Tuner {
     if (window) {
       const level = rmsOf(window)
 
+      // Track the room: fall quickly toward a quieter floor, rise slowly, so a
+      // sustained note cannot drag the floor up and gate itself out.
+      const rate = level < this.noiseFloor ? NOISE_FALL : NOISE_RISE
+      this.noiseFloor += rate * (level - this.noiseFloor)
+      const gate = Math.max(MIN_GATE, this.noiseFloor * GATE_MARGIN)
+
       // A pluck is a sharp jump in level. The transient after it is
       // inharmonic and sharp, so pause until it leaves the window.
-      if (level > 0.01 && level > this.prevRms * 2.5) {
+      if (level > gate * 2 && level > this.prevRms * 2.5) {
         this.suppressUntil = now + ATTACK_SKIP_MS
         this.resetSettle()
         this.smoother.reset()
       }
       this.prevRms = level
-      if (level > 0.004) this.lastSoundAt = now
+      if (level > gate) this.lastSoundAt = now
 
       if (now >= this.suppressUntil) {
-        const result = detectPitch(window, SAMPLE_RATE)
+        const result = detectPitch(window, SAMPLE_RATE, { minRms: gate })
         if (result) {
           const smoothed = this.smoother.push(result.freq)
           this.lastFreq = smoothed
@@ -167,15 +214,14 @@ export class Tuner {
     if (this.lastFreq === null) return
 
     if (this.lockedString) {
-      const m = centsForString(this.lastFreq, this.lockedString, this.settings.a4)
-      this.lastStringIndex = STANDARD_TUNING.indexOf(this.lockedString)
-      this.currentCents = m.cents
+      this.lastStringIndex = this.tuning.strings.indexOf(this.lockedString)
+      this.currentCents = centsForString(this.lastFreq, this.lockedString, this.settings.a4)
       // A locked string is never off-scale: the user has said what they are
       // tuning, so target and direction stay on screen however far out.
       this.offScale = false
     } else {
-      const m = matchString(this.lastFreq, this.settings.a4)
-      this.lastStringIndex = STANDARD_TUNING.indexOf(m.string)
+      const m = matchString(this.lastFreq, this.tuning, this.settings.a4)
+      this.lastStringIndex = m.index
       this.currentCents = m.cents
       this.offScale = !m.inRange
     }
@@ -240,6 +286,7 @@ export class Tuner {
       fine: this.fine,
       meterRange: this.fine ? METER_FINE_CENTS : METER_COARSE_CENTS,
       tuned: this.tuned,
+      tuning: this.tuning,
     }
   }
 

@@ -20,12 +20,29 @@ import {
 } from '@evenrealities/even_hub_sdk'
 
 import { Tuner, DEFAULT_SETTINGS, type TunerSettings, type Surface } from './tuner'
-import { GlassesRenderer } from './glasses/display'
+import { GlassesRenderer, tuningIdForMenuItem } from './glasses/display'
 import { mountPhoneUi, type PhoneUi } from './phone/ui'
-import { STANDARD_TUNING, midiToFreq } from './tuning/notes'
+import { midiToFreq } from './tuning/notes'
 
 /** Analysis cadence. 10 fps is past the point where the needle feels live. */
 const FRAME_MS = 100
+
+/**
+ * Set once a contextual-menu click arrives, which proves the firmware opens
+ * the menu. Until then long press cycles tunings instead.
+ */
+let menuConfirmed = false
+
+/**
+ * Input is ignored until this time.
+ *
+ * The host emits a bare `sysEvent` with only `eventSource` set as the page
+ * comes up. Protobuf omits zero values, so that is byte-identical to a real
+ * click and cannot be told apart by shape; without this guard it silently
+ * locked the tuner at startup.
+ */
+let inputArmedAt = Number.POSITIVE_INFINITY
+const INPUT_ARM_MS = 750
 const SETTINGS_KEY = 'tuneful.settings.v1'
 
 const tuner = new Tuner()
@@ -58,6 +75,11 @@ async function main(): Promise<void> {
       tuner.clearSession()
       paint()
     },
+    onTuningChange: (id) => {
+      tuner.setTuning(id)
+      persistSettings()
+      redrawGlasses()
+    },
   })
 
   bridge = await waitForEvenAppBridge()
@@ -86,6 +108,7 @@ async function main(): Promise<void> {
 
   await startMic()
 
+  inputArmedAt = Date.now() + INPUT_ARM_MS
   frameTimer = setInterval(tick, FRAME_MS)
   window.addEventListener('beforeunload', cleanup)
 
@@ -215,14 +238,45 @@ function onHubEvent(event: EvenHubEvent): void {
     return
   }
 
+  // The OS contextual menu reports the item the user picked.
+  if (event.menuItemClickEvent) {
+    const id = tuningIdForMenuItem(event.menuItemClickEvent.itemID)
+    if (id) {
+      menuConfirmed = true
+      tuner.setTuning(id)
+      persistSettings()
+      redrawGlasses()
+    }
+    return
+  }
+
   if (event.sysEvent) {
     // Protobuf omits zero values, so a single click arrives as undefined.
     const type = event.sysEvent.eventType ?? 0
+
+    // Lifecycle events are always acted on; user input waits for the guard.
+    const isInput =
+      type === OsEventTypeList.CLICK_EVENT ||
+      type === OsEventTypeList.DOUBLE_CLICK_EVENT ||
+      type === OsEventTypeList.LONG_PRESS_EVENT ||
+      type === OsEventTypeList.LONG_PRESS_RELEASE_EVENT
+    if (isInput && Date.now() < inputArmedAt) return
+
     switch (type) {
       case OsEventTypeList.CLICK_EVENT:
         if (tuner.currentPhase === 'idle') void resumeFromIdle()
         else tuner.toggleLock()
         paint()
+        break
+      case OsEventTypeList.LONG_PRESS_RELEASE_EVENT:
+        // Fallback for firmware that does not open the contextual menu. Once a
+        // menu click has been seen the menu is known to work, so long press
+        // stops acting and leaves the gesture to the OS.
+        if (!menuConfirmed) {
+          tuner.cycleTuning()
+          persistSettings()
+          redrawGlasses()
+        }
         break
       case OsEventTypeList.DOUBLE_CLICK_EVENT:
         // Nothing is torn down here: the user can still cancel, and cleaning
@@ -263,6 +317,23 @@ function tick(): void {
  * Pushes the current view to both surfaces. Never advances detection: that is
  * `tick`'s job, so a gesture cannot inject a duplicate reading.
  */
+/**
+ * Redraws after a change the in-place updates cannot express, such as a new
+ * tuning, and resends the menu.
+ */
+function redrawGlasses(): void {
+  phone?.setSettings(tuner.settings)
+  if (!glassesAvailable || surface !== 'glasses') {
+    paint()
+    return
+  }
+  renderer?.invalidate()
+  void bridge
+    ?.rebuildPageContainer(GlassesRenderer.rebuildPage(tuner.view()))
+    .catch(() => undefined)
+    .then(() => paint())
+}
+
 function paint(): void {
   const view = tuner.view()
   if (surface === 'glasses') renderer?.render(view)
@@ -296,7 +367,11 @@ async function loadSettings(): Promise<void> {
     const raw = await bridge.getLocalStorage(SETTINGS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<TunerSettings>
-      tuner.settings = { a4: clamp(parsed.a4 ?? DEFAULT_SETTINGS.a4, 415, 445) }
+      tuner.settings = {
+        a4: clamp(parsed.a4 ?? DEFAULT_SETTINGS.a4, 415, 445),
+        tuningId: parsed.tuningId ?? DEFAULT_SETTINGS.tuningId,
+      }
+      tuner.setTuning(tuner.settings.tuningId)
     }
   } catch {
     tuner.settings = { ...DEFAULT_SETTINGS }
@@ -358,11 +433,19 @@ function installDevHarness(): void {
     tuner.ingest(bytes)
   }
 
+  // Lets a test select a tuning, since the simulator cannot press the phone
+  // buttons or send a long press.
+  const wanted = new URLSearchParams(location.search).get('tuning')
+  if (wanted) {
+    tuner.setTuning(wanted)
+    persistSettings()
+  }
+
   const win = window as unknown as Record<string, unknown>
   win.__tuneful = {
     play,
     string(index: number, cents = 0) {
-      const s = STANDARD_TUNING[index]
+      const s = tuner.currentTuning.strings[index]
       play(midiToFreq(s.midi, tuner.settings.a4) * Math.pow(2, cents / 1200))
     },
   }

@@ -11,13 +11,15 @@
 
 import {
   CreateStartUpPageContainer,
+  MenuContainerProperty,
+  MenuItemProperty,
   RebuildPageContainer,
   TextContainerProperty,
   TextContainerUpgrade,
   type EvenAppBridge,
 } from '@evenrealities/even_hub_sdk'
 import { renderBlockText, blockTextWidth } from './blockfont'
-import { STANDARD_TUNING } from '../tuning/notes'
+import { TUNINGS } from '../tuning/notes'
 import { NEAR_CENTS } from '../config'
 import { textWidth } from './metrics'
 import type { TunerView } from '../tuner'
@@ -35,11 +37,12 @@ const NEEDLE_DOTS = ROW_W / 5 // 108 dots of 5px each
 const METER_HALF_PX = 240
 
 /**
- * Two characters, letter plus octave: standard tuning has no accidentals.
- * Fixed width matters because changing geometry needs a rebuild, which flickers.
+ * Three characters: letter, accidental, octave. Half step down and open D
+ * need the accidental cell, and the width is fixed for every tuning because
+ * changing container geometry needs a rebuild, which flickers.
  */
-const NOTE_W = blockTextWidth('E2') // 140
-const NOTE_X = Math.round((SCREEN_W - NOTE_W) / 2) // 218
+const NOTE_W = blockTextWidth('E 2') // 220
+const NOTE_X = Math.round((SCREEN_W - NOTE_W) / 2) // 178
 
 export const CONTAINERS = {
   header: { id: 1, name: 'hdr', x: MARGIN_X, y: 0, w: ROW_W, h: 27, color: 2 },
@@ -99,23 +102,24 @@ export function buildNeedleRow(view: TunerView): string {
 
 export function buildNoteBlock(view: TunerView): string {
   if (view.stringIndex === null || view.offScale) {
-    return renderBlockText('--')
+    return renderBlockText('- -')
   }
   // offScale is never set when locked, so a locked string always shows here.
-  const s = STANDARD_TUNING[view.stringIndex]
-  return renderBlockText(`${s.letter}${s.octave}`)
+  const s = view.tuning.strings[view.stringIndex]
+  return renderBlockText(`${s.letter}${s.accidental || ' '}${s.octave}`)
 }
 
 export function buildHeaderRow(view: TunerView): string {
-  // Session progress shares the left slot with the mode.
+  // Session progress shares the left slot with the mode. The tuning name is
+  // shown only when it is not standard, since standard is unremarkable.
   const done = view.tuned.filter(Boolean).length
   const mode = view.locked ? 'LOCKED' : 'AUTO'
-  const left = `${mode}   ${done}/6`
-  const right = `A4 ${view.a4.toFixed(0)}`
+  const left = `${mode}   ${done}/${view.tuning.strings.length}`
+  const preset = view.tuning.id === 'standard' ? '' : `${view.tuning.name}   `
   const state =
     view.phase === 'micError' ? 'NO MIC' : view.phase === 'idle' ? 'IDLE' :
     view.phase === 'reading' ? '●' : '○'
-  return padBetween(left, `${right}   ${state}`, ROW_W)
+  return padBetween(left, `${preset}A4 ${view.a4.toFixed(0)}   ${state}`, ROW_W)
 }
 
 export function buildReadoutRow(view: TunerView): string {
@@ -144,12 +148,31 @@ export function buildReadoutRow(view: TunerView): string {
 
 /** Active string bracketed; brightness is per container, not per run. */
 export function buildStringsRow(view: TunerView): string {
-  const parts = STANDARD_TUNING.map((s, i) => {
+  const parts = view.tuning.strings.map((s, i) => {
     const active = i === view.stringIndex && !view.offScale
     const mark = view.tuned[i] ? '●' : ' '
     return active ? `${mark}[${s.label}]` : `${mark} ${s.label} `
   })
   return centreish(parts.join(' '), ROW_W)
+}
+
+/**
+ * The OS contextual menu, listing the tuning presets.
+ *
+ * Item ids are one-based because the protocol requires a non-zero identifier.
+ */
+export function buildMenu(): MenuContainerProperty {
+  return new MenuContainerProperty({
+    menuItems: TUNINGS.map(
+      (t, i) => new MenuItemProperty({ itemID: i + 1, itemName: t.name }),
+    ),
+  })
+}
+
+/** Maps a menu item id back to a tuning, or null if it is not one of ours. */
+export function tuningIdForMenuItem(itemID: number | undefined): string | null {
+  if (itemID === undefined) return null
+  return TUNINGS[itemID - 1]?.id ?? null
 }
 
 // --- Width-aware text helpers -------------------------------------------
@@ -218,6 +241,7 @@ export class GlassesRenderer {
     const c = CONTAINERS
     return new CreateStartUpPageContainer({
       containerTotalNum: 6,
+      menuObject: buildMenu(),
       textObject: [
         text(c.header, buildHeaderRow(view), c.header.color, 1),
         text(c.note, buildNoteBlock(view), c.note.color),
@@ -238,6 +262,8 @@ export class GlassesRenderer {
     const page = GlassesRenderer.initialPage(view)
     return new RebuildPageContainer({
       containerTotalNum: page.containerTotalNum,
+      // Omitting menuObject on a rebuild clears the menu, so it is resent.
+      menuObject: buildMenu(),
       textObject: page.textObject,
     })
   }
@@ -255,7 +281,7 @@ export class GlassesRenderer {
     this.pending = null
     void this.flushRows([
       [CONTAINERS.header, padBetween('TUNEFUL', 'PHONE', ROW_W), 2],
-      [CONTAINERS.note, renderBlockText('--'), 2],
+      [CONTAINERS.note, renderBlockText('- -'), 2],
       [CONTAINERS.scale, buildScaleRow(false), 1],
       [CONTAINERS.needle, '·'.repeat(NEEDLE_DOTS), 1],
       [CONTAINERS.readout, centreish('TUNING ON PHONE', ROW_W), 3],

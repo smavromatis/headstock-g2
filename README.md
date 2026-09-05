@@ -27,11 +27,32 @@ To package:
 
     npm run pack           # produces tuneful.ehpk
 
-## Tuning reference
+## Tunings
+
+Classical, acoustic and electric guitars all tune to the same pitches, so the
+presets differ by tuning, not by instrument. Six are available, chosen from the
+glasses menu or the phone:
+
+| Preset | Strings |
+|---|---|
+| Standard | E2 A2 D3 G3 B3 E4 |
+| Drop D | D2 A2 D3 G3 B3 E4 |
+| DADGAD | D2 A2 D3 G3 A3 D4 |
+| Open G | D2 G2 D3 G3 B3 D4 |
+| Open D | D2 A2 D3 F#3 A3 D4 |
+| Half step down | Eb2 Ab2 Db3 Gb3 Bb3 Eb4 |
 
 Frequencies come from the A4 reference at run time, so 442 Hz and 415 Hz stay
-exact. At A4 = 440 the open strings are 82.407, 110.000, 146.832, 195.998,
+exact. At A4 = 440 standard tuning is 82.407, 110.000, 146.832, 195.998,
 246.942 and 329.628 Hz.
+
+Auto-detect only works within half the closest string spacing, which the
+tuning decides. Standard leaves 400 cents between neighbours, but DADGAD puts
+G3 and A3 a whole tone apart, so its window is 100 cents. Lock a string that
+sits further out than that.
+
+The microphone gate tracks the room rather than using a fixed threshold, so a
+quiet unplugged electric and a loud steel-string both register.
 
 Everything is referenced to the glasses' 16 kHz sample clock. Crystal tolerance
 is around 50 ppm, which is 0.09 cents, so the clock is not a practical source
@@ -79,11 +100,15 @@ released and the display offers `TAP TO RESUME`.
 | Tap | Lock to the current string, or unlock. Resumes when idle. |
 | Swipe up or down | Choose the string |
 | Double tap | Exit |
+| Long press | Next tuning, until the OS menu is confirmed working |
 
-Auto-detect picks the nearest open string, unambiguous within about 200 cents;
-lock a string further out than that. A locked string is never off-scale. The
-microphone choice decides which surface is the tuner, and the app falls back to
-the phone if the glasses page cannot be created.
+The tuning presets are published to the OS contextual menu via `menuObject`.
+The gesture that opens that menu is not documented, so long press cycles the
+presets as a fallback and stops doing so once a menu selection has been seen.
+
+A locked string is never treated as off-scale. The microphone choice decides
+which surface is the tuner, and the app falls back to the phone if the glasses
+page cannot be created.
 
 ## Platform notes
 
@@ -105,6 +130,13 @@ the phone if the glasses page cannot be created.
 - Text that exactly fills a container wraps to an invisible second line.
   Padding is measured against the composed string, because kerning at the join
   is enough to lose a trailing word.
+- The host emits a bare `sysEvent` carrying only `eventSource` as the page
+  comes up. Since protobuf omits zero values, that is identical to a real
+  click and cannot be told apart by shape, so input is ignored for 750 ms
+  after startup.
+- `LONG_PRESS_EVENT` (9), `LONG_PRESS_RELEASE_EVENT` (10) and the whole
+  contextual-menu API exist in SDK 0.0.14 but are absent from the published
+  documentation, which stops at event 8.
 
 ## Files
 
