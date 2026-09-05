@@ -139,6 +139,9 @@ export class Tuner {
   /** Key into `settings.offsets` for the microphone in use. */
   private source = 'glasses'
 
+  /** Recent readings, so calibration averages rather than sampling an instant. */
+  private readonly recentCents: number[] = []
+
   // Auto-detect stickiness: a challenger must win several frames in a row.
   private candidateIndex: number | null = null
   private candidateFrames = 0
@@ -227,8 +230,12 @@ export class Tuner {
    * that error in permanently.
    */
   calibrate(): 'ok' | 'no-reading' | 'too-far' {
-    const c = this.currentCents
-    if (c === null || this.lastFreq === null || this.offScale) return 'no-reading'
+    // The median of the last couple of seconds, not the instant of the tap:
+    // the offset wanders by a cent or so, and a single sample could land
+    // anywhere in that spread and be stored permanently.
+    if (this.recentCents.length < 8 || this.offScale) return 'no-reading'
+    const sorted = [...this.recentCents].sort((a, b) => a - b)
+    const c = sorted[sorted.length >> 1]
     if (Math.abs(c) > 25) return 'too-far'
     this.settings.offsets = { ...this.settings.offsets, [this.source]: this.offset - c }
     this.reset()
@@ -346,6 +353,12 @@ export class Tuner {
     }
 
     this.updateMatch()
+
+    if (this.currentCents !== null && !this.offScale) {
+      this.recentCents.push(this.currentCents)
+      if (this.recentCents.length > 20) this.recentCents.shift()
+    }
+
     this.updateSettle(now)
     this.advanceLock(now)
     this.updateShownFreq(now)
@@ -518,6 +531,7 @@ export class Tuner {
   }
 
   reset(): void {
+    this.recentCents.length = 0
     this.candidateIndex = null
     this.candidateFrames = 0
     this.longWindowActive = false
