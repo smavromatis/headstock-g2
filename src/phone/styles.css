@@ -265,24 +265,8 @@ body {
 .step:active { opacity: 1; }
 
 
-.choice { display: flex; gap: 18px; }
 
-.choice button {
-  border: 0;
-  background: none;
-  padding: 4px 0;
-  color: var(--faint);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 500;
-  cursor: pointer;
-  touch-action: manipulation;
-}
 
-.choice button[aria-pressed='true'] {
-  color: var(--text);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
 
 /* Tuning presets wrap onto a second line, so the row stacks. */
 .row-stack {
