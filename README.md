@@ -1,6 +1,6 @@
 # Headstock
 
-A tuner for classical guitar that runs on Even Realities G2 glasses.
+A guitar tuner that runs on Even Realities G2 glasses.
 
 The glasses show the note, a needle, and which way to turn the peg. The phone
 holds settings, or becomes the tuner itself if you pick the phone microphone.
