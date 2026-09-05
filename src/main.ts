@@ -22,6 +22,7 @@ import {
 import { Tuner, DEFAULT_SETTINGS, type TunerSettings, type Surface } from './tuner'
 import { GlassesRenderer, tuningIdForMenuItem } from './glasses/display'
 import { BridgeQueue } from './bridge-queue'
+import { MIC_CONTROL_TIMEOUT_MS } from './config'
 import { resetPcmFormat } from './audio/stream'
 import { mountPhoneUi, type PhoneUi } from './phone/ui'
 import { midiToFreq } from './tuning/notes'
@@ -231,7 +232,10 @@ async function setUpGlasses(): Promise<boolean> {
 async function startMic(): Promise<void> {
   if (!bridge) return
   try {
-    const ok = await queue.run(() => bridge!.audioControl(true, micSource))
+    const ok = await queue.run(
+      () => bridge!.audioControl(true, micSource),
+      MIC_CONTROL_TIMEOUT_MS,
+    )
     if (!ok) throw new Error('audioControl did not start')
     tuner.setPhase('listening')
     tuner.markActive(Date.now())
@@ -252,7 +256,7 @@ async function startMic(): Promise<void> {
 
 async function restartMic(): Promise<void> {
   if (!bridge) return
-  await queue.run(() => bridge!.audioControl(false))
+  await queue.run(() => bridge!.audioControl(false), MIC_CONTROL_TIMEOUT_MS)
   // The two microphone paths need not agree on payload format, nor on rate.
   resetPcmFormat()
   tuner.resetRateMeter(Date.now())
@@ -267,7 +271,7 @@ async function goIdle(): Promise<void> {
   // Progress is kept: a pause is not a reason to discard the strings already
   // tuned.
   tuner.reset()
-  await queue.run(() => bridge!.audioControl(false))
+  await queue.run(() => bridge!.audioControl(false), MIC_CONTROL_TIMEOUT_MS)
   phone?.setMic({ active: false, source: micSource })
   paint()
 }
