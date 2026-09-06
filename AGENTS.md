@@ -108,6 +108,12 @@ character to any string the glasses render and rerun `npm run gen:metrics`;
 - Text that exactly fills a container wraps to an invisible second line. Padding
   is measured against the composed string, kerning included, because measuring
   the halves separately was enough to lose a trailing word.
+- `evenhub pack` stamps `min_app_version` from the SDK's own floor, which it
+  reads from npm. Without `--sdk-ver` it reads whichever SDK is latest, so
+  publishing a newer one would raise the floor on a build made against 0.0.14
+  and drop app versions that can still run it. The pack script pins it, which
+  also silences the CLI's "built against a different SDK?" warning. Today both
+  produce a byte-identical package, since 0.0.14 is latest.
 - The simulator has no usable audio input, so it can only verify layout.
   `onDeviceStatusChanged` never fires there either.
 
