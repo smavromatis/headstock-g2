@@ -1,9 +1,10 @@
 /**
  * Detection regression tests. Run with: npm run check:detection
  *
- * Covers the three failures that have actually happened here: pitch error
- * beyond a cent, a reading that drifts on a constant tone, and a noise gate
- * that closes on a sustained note and makes the tuner go deaf.
+ * Covers the failures that have actually happened here: pitch error beyond a
+ * cent, a reading that drifts on a constant tone, a noise gate that closes on
+ * a sustained note and makes the tuner go deaf, and a decay rejection that was
+ * comparing the level against itself instead of the previous frame.
  */
 import { Tuner } from '../src/tuner'
 import { detectPitch } from '../src/audio/pitch'
@@ -89,6 +90,62 @@ report('never goes deaf', lost === 0, `${lost} of ${readings.length} frames lost
 const errs = readings.filter((r): r is number => r !== null).map((r) => Math.abs(cents(r, target)))
 const worstDrift = Math.max(...errs)
 report('no drift over 60s', worstDrift < 1, `worst ${worstDrift.toFixed(3)} cents`)
+
+/**
+ * A note damped hard while its pitch slides flat.
+ *
+ * A string goes flat as it dies, so those frames must not reach the estimator:
+ * the reading should hold where the note was rather than follow it down.
+ * `advance()` drops them by comparing the level against the previous frame.
+ *
+ * Guards an ordering bug. `prevRms` was assigned before the comparison read
+ * it, making the test `level < level * 0.6`, false for every level, so the
+ * rejection never ran. Put that assignment back above the comparison and this
+ * reports ~17 cents against a limit of 10.
+ */
+function runDamped(f0: number, dampRate: number, slideCents: number) {
+  const tuner = new Tuner()
+  // Deterministic noise, so the margin cannot vary between runs.
+  let seed = 12345
+  const noise = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff) * 2 - 1
+
+  let phase = 0
+  let t = 0
+  const worst: number[] = []
+  for (let step = 0; step < 45; step++) {
+    const n = 1600
+    const bytes = new Uint8Array(n * 2)
+    const partials = [0.3, 0.85, 0.55, 0.4, 0.28, 0.18, 0.12]
+    for (let i = 0; i < n; i++) {
+      // Sustained long enough to be locked on, then damped.
+      const dying = Math.max(0, t - 1.8)
+      const envelope = Math.exp(-dampRate * dying)
+      const slide = slideCents * (1 - envelope)
+      let s = 0
+      for (let k = 0; k < partials.length; k++) s += partials[k] * Math.sin(phase * (k + 1))
+      phase += (2 * Math.PI * (f0 * Math.pow(2, slide / 1200))) / SR
+      const v = 0.25 * envelope * s + 0.002 * noise()
+      const q = Math.round(Math.max(-1, Math.min(1, v)) * 32767)
+      bytes[i * 2] = q & 0xff
+      bytes[i * 2 + 1] = (q >> 8) & 0xff
+      t += 1 / SR
+    }
+    tuner.ingest(bytes)
+    tuner.advance(step * 100 + 100)
+    // Only frames after the damping starts matter.
+    if (t > 2.2) {
+      const c = tuner.view().cents
+      if (c !== null) worst.push(Math.abs(c))
+    }
+  }
+  return worst.length ? Math.max(...worst) : Infinity
+}
+
+console.log('\na damped string sliding 30 cents flat')
+for (const rate of [6, 9, 14]) {
+  const worst = runDamped(midiToFreq(TUNINGS[0].strings[2].midi, 440), rate, -30)
+  report(`holds through damping at ${rate}/s`, worst < 10, `drifted ${worst.toFixed(2)} cents`)
+}
 
 console.log(failures ? `\n${failures} failure(s)\n` : '\nall detection checks passed\n')
 process.exit(failures ? 1 : 0)

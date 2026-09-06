@@ -153,9 +153,10 @@ build when implementation vocabulary reappears there.
 ## Checks
 
 `scripts/` guards the failures that have actually happened here: row overflow,
-needle discontinuity, pitch drift, a gate that closed on a sustained note, and
-a search that fed back on itself. Each check has been verified to fail when its
-bug is reintroduced. Do that for any new one; a check that cannot fail is worse
+needle discontinuity, pitch drift, a gate that closed on a sustained note, a
+search that fed back on itself, and a decay rejection that compared the level
+against itself. Each check has been verified to fail when its bug is
+reintroduced. Do that for any new one; a check that cannot fail is worse
 than none, because it reads as coverage.
 
 ## Identity

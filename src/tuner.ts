@@ -236,12 +236,16 @@ export class Tuner {
         this.resetSettle()
         this.smoother.reset()
       }
-      this.prevRms = level
       if (level > gate) this.lastSoundAt = now
 
       // A steeply falling level means the note is decaying hard, where its
       // pitch is genuinely moving; those frames drag the estimate flat.
+      //
+      // Compared against the previous frame, so prevRms is updated after this.
+      // Assigning it above made the test `level < level * 0.6`, false for any
+      // level, so the rejection never ran.
       const decaying = this.prevRms > 0 && level < this.prevRms * DECAY_REJECT_RATIO
+      this.prevRms = level
 
       if (now >= this.suppressUntil && !decaying) {
         const result = detectPitch(window, SAMPLE_RATE, {
