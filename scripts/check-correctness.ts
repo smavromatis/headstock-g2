@@ -1,3 +1,4 @@
+import { ReadingVisibility } from '../src/reading-visibility'
 import assert from 'node:assert/strict'
 import { diagnostics } from '../src/diagnostics'
 import { Microphone } from '../src/microphone'
@@ -6,7 +7,7 @@ import { detectPitch } from '../src/audio/pitch'
 import { decodePcm, PitchSmoother } from '../src/audio/stream'
 import { TUNINGS, midiToFreq } from '../src/tuning/notes'
 import { BridgeQueue } from '../src/bridge-queue'
-import { GlassesRenderer } from '../src/glasses/display'
+import { buildReadoutRow, buildNeedleRow, GlassesRenderer } from '../src/glasses/display'
 
 let failures = 0
 async function test(name: string, run: () => unknown) {
@@ -31,6 +32,57 @@ function source() {
   }
 }
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+await test('Display brightness resists dropouts and requires stable recovery', () => {
+  const visibility = new ReadingVisibility()
+  assert.equal(visibility.update(0, true, true), false)
+  assert.equal(visibility.update(300, true, true), true)
+  // A ringing note can alternate accepted and rejected analyses.
+  for (let now = 400; now <= 2000; now += 100)
+    assert.equal(visibility.update(now, now % 200 === 0, true), true)
+  assert.equal(visibility.update(2100, false, true), true)
+  assert.equal(visibility.update(2599, false, true), true)
+  assert.equal(visibility.update(2600, false, true), false)
+  for (let now = 2700; now <= 4000; now += 100)
+    assert.equal(visibility.update(now, now % 200 === 0, true), false)
+  assert.equal(visibility.update(4200, true, true), false)
+  assert.equal(visibility.update(4300, true, true), true)
+  assert.equal(visibility.update(4400, false, false), false)
+  assert.equal(visibility.update(4500, true, true), false)
+  visibility.reset()
+  assert.equal(visibility.update(4800, true, true), false)
+})
+await test('Display holds live readings between hops and distinguishes rejected audio', () => {
+  const t = new Tuner()
+  const tone = source()
+  for (let now = 100; now <= 3000; now += 100) {
+    t.ingest(tone(), now)
+    t.advance(now)
+  }
+  const live = t.view()
+  assert.equal(live.phase, 'reading')
+  assert.equal(live.visualActive, true)
+  const row = buildReadoutRow(live)
+  for (let now = 3001; now < 3100; now++) {
+    t.advance(now)
+    assert.equal(t.view().phase, 'reading')
+    assert.equal(buildReadoutRow(t.view()), row)
+  }
+  t.ingest(new Uint8Array(3200), 3100)
+  t.advance(3100)
+  const held = t.view()
+  assert.equal(held.phase, 'stale')
+  assert.equal(held.visualActive, true)
+  assert.equal(held.confirmed, false)
+  assert.equal(held.inTolerance, false)
+  assert(buildNeedleRow(held).includes('▲'))
+  assert.equal(buildReadoutRow(held).trim(), 'LISTENING')
+  assert.equal(buildReadoutRow({ ...live, offScale: true }).trim(), 'LISTENING')
+  t.advance(3600)
+  assert.equal(t.view().visualActive, false)
+  t.advance(4500)
+  assert.equal(t.view().cents, null)
+  assert.equal(buildReadoutRow(t.view()).trim(), 'PLAY A STRING')
+})
 await test('R1 stale buffer cannot refresh reading or idle activity', () => {
   const t = new Tuner()
   t.markActive(1)

@@ -27,7 +27,6 @@ import {
   METER_INNER_CENTS,
   METER_INNER_PX,
   METER_MAX_CENTS,
-  NEAR_CENTS,
   NEEDLE_HYSTERESIS_DOTS,
 } from '../config'
 import { textWidth } from './metrics'
@@ -164,7 +163,7 @@ export function buildHeaderRow(view: TunerView): string {
       ? 'NO MIC'
       : view.phase === 'idle'
         ? 'IDLE'
-        : view.phase === 'reading'
+        : (view.visualActive ?? view.phase === 'reading')
           ? '●'
           : '○'
   return padBetween(left, `${preset}${capo}A4 ${view.a4.toFixed(0)}   ${state}`, ROW_W)
@@ -173,11 +172,12 @@ export function buildHeaderRow(view: TunerView): string {
 export function buildReadoutRow(view: TunerView): string {
   if (view.phase === 'micError') return centreish('MICROPHONE UNAVAILABLE', ROW_W)
   if (view.phase === 'idle') return centreish('TAP TO RESUME', ROW_W)
-  if (view.phase === 'stale') return centreish('PLAY A STRING', ROW_W)
+  // Keep brief uncertainty distinct from asking for a new pluck. The held
+  // marker dims after sustained uncertainty; stale evidence cannot confirm.
+  if (view.phase === 'stale' || view.offScale) return centreish('LISTENING', ROW_W)
   if (view.cents === null || view.stringIndex === null || view.offScale) {
     return centreish('PLAY A STRING', ROW_W)
   }
-  if (view.offScale) return centreish('NO STRING MATCH', ROW_W)
 
   const c = view.cents
   const abs = Math.abs(c)
@@ -394,21 +394,18 @@ export class GlassesRenderer {
         const view = this.pending
         this.pending = null
 
-        const near = view.cents !== null && Math.abs(view.cents) <= NEAR_CENTS
+        const active = view.visualActive ?? view.phase === 'reading'
 
         const rows: RowSpec[] = [
           [CONTAINERS.header, buildHeaderRow(view), CONTAINERS.header.color],
-          // Dim a stale reading, so a decayed string never looks live.
-          [CONTAINERS.note, buildNoteBlock(view), view.phase === 'reading' ? 4 : 1],
+          // Brightness has its own hold/recovery timing; raw evidence still
+          // controls confirmation and marker shape immediately.
+          [CONTAINERS.note, buildNoteBlock(view), active ? 4 : 1],
           // One continuous scale, so this only changes when the in-tune band
           // moves; it is sent for the initial draw and after a rebuild.
           [CONTAINERS.scale, buildScaleRow(), 2],
-          [
-            CONTAINERS.needle,
-            buildNeedleRow(view, this.steadyNeedleDot(view)),
-            view.confirmed ? 4 : view.inTolerance ? 4 : near ? 3 : 2,
-          ],
-          [CONTAINERS.readout, buildReadoutRow(view), view.confirmed ? 4 : 3],
+          [CONTAINERS.needle, buildNeedleRow(view, this.steadyNeedleDot(view)), active ? 3 : 1],
+          [CONTAINERS.readout, buildReadoutRow(view), 3],
           [CONTAINERS.strings, buildStringsRow(view), CONTAINERS.strings.color],
         ]
 

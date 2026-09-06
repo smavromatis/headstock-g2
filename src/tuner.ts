@@ -1,3 +1,4 @@
+import { ReadingVisibility } from './reading-visibility'
 import { diagnostics } from './diagnostics'
 /**
  * Tuner state machine: audio in, view model out. No bridge calls, so it runs
@@ -57,6 +58,8 @@ export const DEFAULT_SETTINGS: TunerSettings = {
 
 export interface TunerView {
   phase: TunerPhase
+  /** Debounced presentation brightness; never confirmation evidence. */
+  visualActive?: boolean
   measurement?: Readonly<Measurement> | null
   /** Index into STANDARD_TUNING, or null when nothing is detected. */
   stringIndex: number | null
@@ -102,6 +105,8 @@ export function normalizeSettings(raw: unknown): TunerSettings {
 }
 
 export class Tuner {
+  private readonly visibility = new ReadingVisibility()
+  private visualActive = false
   private readonly ring = new AudioRingBuffer(WINDOW_SIZE * 2)
   private readonly smoother = new PitchSmoother()
   private readonly window = new Float32Array(WINDOW_SIZE)
@@ -355,7 +360,12 @@ export class Tuner {
     this.updateSettle(now)
     this.advanceLock(now)
     this.updateShownFreq(now)
-    this.updatePhase(now)
+    this.updatePhase(now, canAnalyse)
+    this.visualActive = this.visibility.update(
+      now,
+      this.phase === 'reading' && !this.offScale,
+      this.lastFreq !== null && (this.phase === 'reading' || this.phase === 'stale'),
+    )
     if (canAnalyse)
       diagnostics.record({
         kind: 'measurement',
@@ -515,11 +525,15 @@ export class Tuner {
     }
   }
 
-  private updatePhase(now: number): void {
+  private updatePhase(now: number, canAnalyse: boolean): void {
     if (this.phase === 'micError' || this.phase === 'idle') return
     const fresh = this.lastFreq !== null && now - this.lastDetectionAt <= READING_HOLD_MS
+    // A render tick without a new analysis is not a rejected measurement.
+    // Preserve live state between hops, but never across a rejected hop or gap.
     this.phase = fresh
-      ? now - this.receivedAt <= AUDIO_GAP_MS && this.accepted
+      ? now - this.receivedAt <= AUDIO_GAP_MS &&
+        now - this.lastDetectionAt <= AUDIO_GAP_MS &&
+        (this.accepted || (!canAnalyse && this.phase === 'reading'))
         ? 'reading'
         : 'stale'
       : 'listening'
@@ -547,6 +561,7 @@ export class Tuner {
 
     return {
       phase: this.phase,
+      visualActive: this.visualActive,
       measurement: this.measurement ? { ...this.measurement } : null,
       stringIndex: this.lockedString
         ? this.tuning.strings.indexOf(this.lockedString)
@@ -565,6 +580,8 @@ export class Tuner {
   }
 
   reset(): void {
+    this.visibility.reset()
+    this.visualActive = false
     this.sampleEnd = 0
     this.analysedEnd = 0
     this.receivedAt = -Infinity
