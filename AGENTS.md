@@ -189,8 +189,6 @@ against itself. Each check has been verified to fail when its bug is
 reintroduced. Do that for any new one; a check that cannot fail is worse
 than none, because it reads as coverage.
 
-Implementation evidence, reproducible commands, known limits and physical G2
-sign-off steps are in [docs/implementation-report.md](docs/implementation-report.md).
 `?diagnostics=1` in a development build enables a 1000-event numeric ring at
 `window.__headstockDiagnostics.snapshot()`. It contains no recordings and sends
 nothing. Production builds do not expose the development console harness.
