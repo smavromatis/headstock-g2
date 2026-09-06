@@ -325,14 +325,8 @@ function onHubEvent(event: EvenHubEvent): void {
 
 // --- Frame loop ----------------------------------------------------------
 
-let lastRateShown = 0
-
 function tick(): void {
   const now = Date.now()
-
-  if (now - lastRateShown > 2000) {
-    lastRateShown = now
-  }
 
   if (exitDialogOpen && now - exitDialogOpenedAt > EXIT_DIALOG_TIMEOUT_MS) {
     closeExitDialog()
