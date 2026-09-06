@@ -1,6 +1,6 @@
 {
   "name": "headstock",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Guitar tuner for Even Realities G2 smart glasses",
   "main": "index.js",
   "scripts": {
