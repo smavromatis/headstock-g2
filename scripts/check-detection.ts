@@ -25,7 +25,9 @@ function pluck(f0: number, n: number, phase = 0.3, weak = true): Float32Array {
   for (let i = 0; i < n; i++) {
     let s = 0
     for (let k = 0; k < partials.length; k++) {
-      s += partials[k] * Math.sin(2 * Math.PI * f0 * (k + 1) * (1 + 2e-4 * k * k) * (i / SR) + phase * (k + 1))
+      s +=
+        partials[k] *
+        Math.sin(2 * Math.PI * f0 * (k + 1) * (1 + 2e-4 * k * k) * (i / SR) + phase * (k + 1))
     }
     buf[i] = 0.22 * Math.exp(-2.2 * (i / SR)) * s + 0.004 * (Math.random() * 2 - 1)
   }
@@ -40,7 +42,10 @@ for (const s of TUNINGS[0].strings) {
   let worst = 0
   for (let t = 0; t < 12; t++) {
     const r = detectPitch(pluck(target, WINDOW, t * 0.37), SR)
-    if (!r) { worst = Infinity; break }
+    if (!r) {
+      worst = Infinity
+      break
+    }
     worst = Math.max(worst, Math.abs(cents(r.freq, target)))
   }
   report(`${s.label} within 1 cent`, worst < 1, `${worst.toFixed(3)} cents`)

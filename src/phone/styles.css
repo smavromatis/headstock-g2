@@ -29,15 +29,22 @@
   }
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
   padding: 0 24px 40px;
   background: var(--bg);
   color: var(--text);
-  font-family: 'FK Grotesk Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    system-ui, sans-serif;
+  font-family:
+    'FK Grotesk Neue',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    system-ui,
+    sans-serif;
   font-size: 15px;
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
@@ -68,8 +75,12 @@ body {
   color: var(--dim);
 }
 
-.state[data-live='true'] { color: var(--ok); }
-.state[data-live='error'] { color: var(--warn); }
+.state[data-live='true'] {
+  color: var(--ok);
+}
+.state[data-live='error'] {
+  color: var(--warn);
+}
 
 /* --- the reading ------------------------------------------------------- */
 
@@ -89,9 +100,13 @@ body {
   letter-spacing: -0.04em;
 }
 
-.note[data-idle='true'] { color: var(--faint); }
+.note[data-idle='true'] {
+  color: var(--faint);
+}
 
-.deviation { text-align: right; }
+.deviation {
+  text-align: right;
+}
 
 .cents {
   font-size: 40px;
@@ -100,8 +115,12 @@ body {
   letter-spacing: -0.03em;
 }
 
-.cents[data-tuned='true'] { color: var(--ok); }
-.cents[data-idle='true'] { color: var(--faint); }
+.cents[data-tuned='true'] {
+  color: var(--ok);
+}
+.cents[data-idle='true'] {
+  color: var(--faint);
+}
 
 .action {
   font-size: 11px;
@@ -112,7 +131,9 @@ body {
   min-height: 14px;
 }
 
-.action[data-tuned='true'] { color: var(--ok); }
+.action[data-tuned='true'] {
+  color: var(--ok);
+}
 
 .freq {
   font-size: 12px;
@@ -149,7 +170,6 @@ body {
   background: var(--rule);
 }
 
-
 .needle {
   position: absolute;
   top: -1px;
@@ -157,11 +177,20 @@ body {
   height: 15px;
   margin-left: -1px;
   background: var(--flat);
-  transition: left 90ms linear, background-color 150ms ease, opacity 150ms ease;
+  transition:
+    left 90ms linear,
+    background-color 150ms ease,
+    opacity 150ms ease;
 }
 
-.needle[data-tuned='true'] { background: var(--ok); width: 4px; margin-left: -2px; }
-.needle[data-idle='true'] { opacity: 0; }
+.needle[data-tuned='true'] {
+  background: var(--ok);
+  width: 4px;
+  margin-left: -2px;
+}
+.needle[data-idle='true'] {
+  opacity: 0;
+}
 
 .scale {
   display: flex;
@@ -183,7 +212,11 @@ body {
   margin-top: 18px;
 }
 
-.pips { display: flex; gap: 10px; align-items: center; }
+.pips {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
 
 .pip {
   display: flex;
@@ -203,9 +236,17 @@ body {
   border: 1px solid var(--faint);
 }
 
-.pip[data-done='true'] i { background: var(--ok); border-color: var(--ok); }
-.pip[data-done='true'] { color: var(--text); }
-.pip[data-active='true'] i { border-color: var(--text); border-width: 2px; }
+.pip[data-done='true'] i {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+.pip[data-done='true'] {
+  color: var(--text);
+}
+.pip[data-active='true'] i {
+  border-color: var(--text);
+  border-width: 2px;
+}
 
 .session button {
   border: 0;
@@ -221,7 +262,9 @@ body {
 
 /* --- settings rows ----------------------------------------------------- */
 
-.rows { border-top: 1px solid var(--rule); }
+.rows {
+  border-top: 1px solid var(--rule);
+}
 
 .row {
   display: flex;
@@ -240,7 +283,11 @@ body {
   white-space: nowrap;
 }
 
-.row-control { display: flex; align-items: center; gap: 4px; }
+.row-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .row-control .val {
   min-width: 62px;
@@ -262,11 +309,9 @@ body {
   opacity: 0.55;
 }
 
-.step:active { opacity: 1; }
-
-
-
-
+.step:active {
+  opacity: 1;
+}
 
 /* Tuning presets wrap onto a second line, so the row stacks. */
 .row-stack {
@@ -274,9 +319,16 @@ body {
   padding: 14px 0;
 }
 
-.row-stack .row-label { display: block; margin-bottom: 10px; }
+.row-stack .row-label {
+  display: block;
+  margin-bottom: 10px;
+}
 
-.presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 .preset {
   border: 0;
@@ -292,7 +344,10 @@ body {
   touch-action: manipulation;
 }
 
-.preset[aria-pressed='true'] { background: var(--accent); color: #232323; }
+.preset[aria-pressed='true'] {
+  background: var(--accent);
+  color: #232323;
+}
 
 /* --- footer ------------------------------------------------------------ */
 
@@ -305,7 +360,10 @@ body {
   color: var(--dim);
 }
 
-.legend b { font-weight: 500; color: var(--text); }
+.legend b {
+  font-weight: 500;
+  color: var(--text);
+}
 
 .notice {
   padding: 12px 0 0;

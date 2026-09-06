@@ -39,7 +39,9 @@ for (const preset of TUNINGS) {
         for (let cents = -60; cents <= 60; cents += 0.25) {
           {
             const view = {
-              phase, locked, cents,
+              phase,
+              locked,
+              cents,
               stringIndex: 2,
               freq: 196.0,
               a4: 442,
@@ -59,20 +61,30 @@ for (const preset of TUNINGS) {
             ] as const) {
               seen.rows++
               const w = textWidth(text)
-              check(`${row} fits`, w <= ROW_W, `${preset.name} capo ${capo} ${cents}c -> ${w}px > ${ROW_W}`)
+              check(
+                `${row} fits`,
+                w <= ROW_W,
+                `${preset.name} capo ${capo} ${cents}c -> ${w}px > ${ROW_W}`,
+              )
             }
 
             seen.needles++
             const needle = textWidth(buildNeedleRow(view))
-            check('needle width constant', needle === NEEDLE_W,
-              `${preset.name} ${cents}c -> ${needle}px, expected ${NEEDLE_W}`)
+            check(
+              'needle width constant',
+              needle === NEEDLE_W,
+              `${preset.name} ${cents}c -> ${needle}px, expected ${NEEDLE_W}`,
+            )
 
             seen.notes++
             const lines = buildNoteBlock(view).split('\n')
             check('note block is 5 lines', lines.length === 5, `got ${lines.length}`)
             for (const line of lines) {
-              check('note block width constant', textWidth(line) === NOTE_W,
-                `${tuning.strings[2].label} -> ${textWidth(line)}px, expected ${NOTE_W}`)
+              check(
+                'note block width constant',
+                textWidth(line) === NOTE_W,
+                `${tuning.strings[2].label} -> ${textWidth(line)}px, expected ${NOTE_W}`,
+              )
             }
           }
         }
@@ -88,12 +100,17 @@ for (const preset of TUNINGS) {
   let at = 0
   for (let c = -50; c <= 50; c += 0.01) {
     const step = Math.abs(needleDot(c + 0.01) - needleDot(c)) * 5
-    if (step > worst) { worst = step; at = c }
+    if (step > worst) {
+      worst = step
+      at = c
+    }
   }
   check('needle never jumps', worst <= 5, `${worst}px at ${at.toFixed(2)} cents`)
   console.log(`  largest needle step for a 0.01 cent change: ${worst}px`)
 }
 
-console.log(`  checked ${seen.rows} rows, ${seen.needles} needle positions, ${seen.notes} note blocks`)
+console.log(
+  `  checked ${seen.rows} rows, ${seen.needles} needle positions, ${seen.notes} note blocks`,
+)
 console.log(failures ? `\n${failures} failure(s)\n` : '\nall layout checks passed\n')
 process.exit(failures ? 1 : 0)

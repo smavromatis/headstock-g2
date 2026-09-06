@@ -73,7 +73,6 @@ let renderer: GlassesRenderer | null = null
 let phone: PhoneUi | null = null
 let frameTimer: ReturnType<typeof setInterval> | null = null
 
-
 const teardown: Array<() => void> = []
 
 async function main(): Promise<void> {
@@ -206,8 +205,7 @@ async function startMic(): Promise<void> {
     phone?.setMic({ active: false })
     phone?.setStatus({
       connection: 'error',
-      message:
-        'The glasses microphone did not start. Check they are connected and worn.',
+      message: 'The glasses microphone did not start. Check they are connected and worn.',
     })
   }
   paint()

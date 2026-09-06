@@ -12,12 +12,36 @@ const MAX_README_LINES = 90
 
 /** Words that mean the text is aimed at someone changing the code. */
 const TECHNICAL = [
-  'YIN', 'phase-vocoder', 'autocorrelation', 'FFT', 'Goertzel',
-  'kerning', 'glyph', 'pixel', 'px', 'dot-matrix', 'LVGL',
-  'protobuf', 'sysEvent', 'textEvent', 'textContainerUpgrade',
-  'createStartUpPageContainer', 'rebuildPageContainer', 'BLE', 'bridge',
-  'hysteresis', 'ring buffer', 'EMA', 'smoothing', 'noise gate', 'RMS',
-  'localStorage', 'WebView', 'setBackgroundState', 'package_id', 'esbuild',
+  'YIN',
+  'phase-vocoder',
+  'autocorrelation',
+  'FFT',
+  'Goertzel',
+  'kerning',
+  'glyph',
+  'pixel',
+  'px',
+  'dot-matrix',
+  'LVGL',
+  'protobuf',
+  'sysEvent',
+  'textEvent',
+  'textContainerUpgrade',
+  'createStartUpPageContainer',
+  'rebuildPageContainer',
+  'BLE',
+  'bridge',
+  'hysteresis',
+  'ring buffer',
+  'EMA',
+  'smoothing',
+  'noise gate',
+  'RMS',
+  'localStorage',
+  'WebView',
+  'setBackgroundState',
+  'package_id',
+  'esbuild',
 ]
 
 const readme = readFileSync('README.md', 'utf8')
@@ -39,10 +63,16 @@ for (const [i, line] of lines.entries()) {
   }
 }
 
-check('README stays non-technical', hits.length === 0,
-  hits.length ? hits.slice(0, 4).join(', ') : 'no implementation vocabulary')
-check('README stays short', lines.length <= MAX_README_LINES,
-  `${lines.length} lines, cap ${MAX_README_LINES}`)
+check(
+  'README stays non-technical',
+  hits.length === 0,
+  hits.length ? hits.slice(0, 4).join(', ') : 'no implementation vocabulary',
+)
+check(
+  'README stays short',
+  lines.length <= MAX_README_LINES,
+  `${lines.length} lines, cap ${MAX_README_LINES}`,
+)
 check('README points at AGENTS.md', readme.includes('AGENTS.md'), 'linked')
 
 console.log(failures ? `\n${failures} failure(s)\n` : '\ndocs check passed\n')

@@ -359,7 +359,6 @@ export class Tuner {
     } else {
       this.resetSettle()
     }
-
   }
 
   /**
@@ -422,8 +421,7 @@ export class Tuner {
   /** Current view. Pure, so it is safe to call as often as needed. */
   view(): TunerView {
     const cents = this.lastFreq === null ? null : this.currentCents
-    const inTolerance =
-      cents !== null && !this.offScale && Math.abs(cents) <= IN_TUNE_CENTS
+    const inTolerance = cents !== null && !this.offScale && Math.abs(cents) <= IN_TUNE_CENTS
 
     return {
       phase: this.phase,

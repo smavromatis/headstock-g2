@@ -195,7 +195,6 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
 
   return {
     setReading(view) {
-
       // Labels must follow the auto-zoom, or the needle changes meaning.
       buildPips(view.tuning.strings)
       for (let i = 0; i < pips.length; i++) {
@@ -203,8 +202,7 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
         pips[i].dataset.active = String(i === view.stringIndex && !view.offScale)
       }
 
-      const hasReading =
-        view.stringIndex !== null && view.cents !== null && !view.offScale
+      const hasReading = view.stringIndex !== null && view.cents !== null && !view.offScale
 
       if (!hasReading) {
         noteEl.dataset.idle = 'true'
@@ -283,7 +281,6 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
       micActive = mic.active
       paintState()
     },
-
   }
 }
 

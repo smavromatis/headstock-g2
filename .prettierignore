@@ -1,0 +1,14 @@
+# build output
+dist/
+*.ehpk
+
+# auto-generated — edit gen-metrics.mjs, not this file
+src/glasses/metrics.ts
+
+# lock files
+package-lock.json
+
+# check:docs gates these two on line count and vocabulary. A formatter that can
+# reflow them can move a build gate, so it is kept away from them.
+README.md
+AGENTS.md

@@ -16,7 +16,9 @@
     "check:layout": "esbuild scripts/check-layout.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-layout.mjs --log-level=error && node node_modules/.cache/check-layout.mjs",
     "check": "npm run check:docs && npm run check:glyphs && npm run check:layout && npm run check:detection && npm run check:robustness",
     "check:robustness": "esbuild scripts/check-robustness.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-robustness.mjs --log-level=error && node node_modules/.cache/check-robustness.mjs",
-    "check:docs": "node scripts/check-docs.mjs"
+    "check:docs": "node scripts/check-docs.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "keywords": [
     "guitar",
@@ -32,6 +34,7 @@
     "@evenrealities/evenhub-simulator": "^0.9.5",
     "@evenrealities/pretext": "^0.1.4",
     "esbuild": "^0.28.2",
+    "prettier": "^3.9.6",
     "typescript": "^5.9.3",
     "vite": "^8.2.2"
   },

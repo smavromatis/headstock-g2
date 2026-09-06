@@ -28,7 +28,10 @@ function makeSource(noise: number) {
   let age = 1e9
   let freq = 0
   return {
-    pluck(f: number) { freq = f; age = 0 },
+    pluck(f: number) {
+      freq = f
+      age = 0
+    },
     frame(): Uint8Array {
       const bytes = new Uint8Array(N * 2)
       const partials = [0.3, 0.85, 0.55, 0.4, 0.28, 0.18, 0.12]
@@ -49,8 +52,14 @@ function makeSource(noise: number) {
   }
 }
 
-function play(tuner: Tuner, src: ReturnType<typeof makeSource>, now: { t: number },
-              index: number, cents: number, maxFrames = 40) {
+function play(
+  tuner: Tuner,
+  src: ReturnType<typeof makeSource>,
+  now: { t: number },
+  index: number,
+  cents: number,
+  maxFrames = 40,
+) {
   const s = TUNINGS[0].strings[index]
   src.pluck(midiToFreq(s.midi, 440) * Math.pow(2, cents / 1200))
   for (let f = 0; f < maxFrames; f++) {
@@ -63,7 +72,12 @@ function play(tuner: Tuner, src: ReturnType<typeof makeSource>, now: { t: number
   return -1
 }
 
-function silence(tuner: Tuner, src: ReturnType<typeof makeSource>, now: { t: number }, frames: number) {
+function silence(
+  tuner: Tuner,
+  src: ReturnType<typeof makeSource>,
+  now: { t: number },
+  frames: number,
+) {
   src.pluck(0)
   for (let f = 0; f < frames; f++) {
     now.t += FRAME_MS
@@ -105,8 +119,11 @@ console.log('\nlong session in a noisy room')
   const first = mean(lat.slice(0, 15))
   const last = mean(lat.slice(-15))
   check('no strings missed', missed === 0, `${missed} of 120`)
-  check('no slowdown over the session', last <= first * 1.6,
-    `first ${(first * FRAME_MS / 1000).toFixed(2)}s vs last ${(last * FRAME_MS / 1000).toFixed(2)}s`)
+  check(
+    'no slowdown over the session',
+    last <= first * 1.6,
+    `first ${((first * FRAME_MS) / 1000).toFixed(2)}s vs last ${((last * FRAME_MS) / 1000).toFixed(2)}s`,
+  )
 }
 
 console.log('\naccuracy across a session')
@@ -128,8 +145,11 @@ console.log('\naccuracy across a session')
     if (v.cents !== null && v.stringIndex === i) errs.push(Math.abs(v.cents + 8))
     silence(tuner, src, now, 6)
   }
-  check('stays under a cent all session', Math.max(...errs) < 1,
-    `worst ${Math.max(...errs).toFixed(3)} cents over ${errs.length} readings`)
+  check(
+    'stays under a cent all session',
+    Math.max(...errs) < 1,
+    `worst ${Math.max(...errs).toFixed(3)} cents over ${errs.length} readings`,
+  )
 }
 
 console.log('\nnoise gate adapts to the room')
@@ -140,7 +160,11 @@ console.log('\nnoise gate adapts to the room')
     const now = { t: 0 }
     silence(tuner, src, now, 200) // let the floor settle to this room
     const f = play(tuner, src, now, 0, -10)
-    check(`detects with room noise ${noise}`, f > 0, f < 0 ? 'went deaf' : `${(f * FRAME_MS) / 1000}s`)
+    check(
+      `detects with room noise ${noise}`,
+      f > 0,
+      f < 0 ? 'went deaf' : `${(f * FRAME_MS) / 1000}s`,
+    )
   }
 }
 
@@ -153,8 +177,8 @@ console.log('\nother strings ringing sympathetically')
     const tuner = new Tuner()
     const phases = [0, 0, 0]
     const f0 = midiToFreq(TUNINGS[0].strings[target].midi, 440)
-    const others = [(target + 1) % 6, (target + 3) % 6].map(
-      (i) => midiToFreq(TUNINGS[0].strings[i].midi, 440),
+    const others = [(target + 1) % 6, (target + 3) % 6].map((i) =>
+      midiToFreq(TUNINGS[0].strings[i].midi, 440),
     )
     let t = 0
     let age = 0
@@ -190,8 +214,11 @@ console.log('\nother strings ringing sympathetically')
       }
     }
     const label = TUNINGS[0].strings[target].label
-    check(`${label} survives 30% sympathetic ringing`, named > 0 && correct === named,
-      `${correct} correct of ${named} named`)
+    check(
+      `${label} survives 30% sympathetic ringing`,
+      named > 0 && correct === named,
+      `${correct} correct of ${named} named`,
+    )
   }
 }
 

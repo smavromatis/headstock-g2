@@ -12,7 +12,5 @@
       "desc": "Listens to your guitar through the glasses microphone array to measure the pitch of each string."
     }
   ],
-  "supported_languages": [
-    "en"
-  ]
+  "supported_languages": ["en"]
 }

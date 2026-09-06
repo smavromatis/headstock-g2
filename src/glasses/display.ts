@@ -42,7 +42,6 @@ const CELL = 20 // px per full-width glyph
 const SCALE_CELLS = ROW_W / CELL // 27
 const NEEDLE_DOTS = ROW_W / 5 // 108 dots of 5px each
 
-
 /**
  * Three characters: letter, accidental, octave. Half step down and open D
  * need the accidental cell, and the width is fixed for every tuning because
@@ -160,8 +159,13 @@ export function buildHeaderRow(view: TunerView): string {
   const preset = view.tuning.id === 'standard' && !view.capo ? '' : `${view.tuning.name}   `
   const capo = view.capo ? `CAPO ${view.capo}   ` : ''
   const state =
-    view.phase === 'micError' ? 'NO MIC' : view.phase === 'idle' ? 'IDLE' :
-    view.phase === 'reading' ? '●' : '○'
+    view.phase === 'micError'
+      ? 'NO MIC'
+      : view.phase === 'idle'
+        ? 'IDLE'
+        : view.phase === 'reading'
+          ? '●'
+          : '○'
   return padBetween(left, `${preset}${capo}A4 ${view.a4.toFixed(0)}   ${state}`, ROW_W)
 }
 
@@ -206,9 +210,7 @@ export function buildStringsRow(view: TunerView): string {
  */
 export function buildMenu(): MenuContainerProperty {
   return new MenuContainerProperty({
-    menuItems: TUNINGS.map(
-      (t, i) => new MenuItemProperty({ itemID: i + 1, itemName: t.name }),
-    ),
+    menuItems: TUNINGS.map((t, i) => new MenuItemProperty({ itemID: i + 1, itemName: t.name })),
   })
 }
 
@@ -326,9 +328,7 @@ export class GlassesRenderer {
    */
   async rebuild(view: TunerView): Promise<void> {
     this.invalidate()
-    await this.queue.run(() =>
-      this.bridge.rebuildPageContainer(GlassesRenderer.rebuildPage(view)),
-    )
+    await this.queue.run(() => this.bridge.rebuildPageContainer(GlassesRenderer.rebuildPage(view)))
     this.render(view)
   }
 
@@ -408,7 +408,12 @@ export class GlassesRenderer {
   }
 
   /** One in-place text update, queued behind any other bridge call. */
-  private async upgrade(id: number, name: string, content: string, textColor: number): Promise<void> {
+  private async upgrade(
+    id: number,
+    name: string,
+    content: string,
+    textColor: number,
+  ): Promise<void> {
     const ok = await this.queue.run(() =>
       this.bridge.textContainerUpgrade(
         new TextContainerUpgrade({

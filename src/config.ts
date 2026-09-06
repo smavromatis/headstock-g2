@@ -24,7 +24,6 @@ export const READING_HOLD_MS = 1400
 /** Silence after which the mic is released. */
 export const IDLE_TIMEOUT_MS = 3 * 60 * 1000
 
-
 /**
  * Noise gate. The floor tracks the room and the gate sits a margin above it,
  * so an unplugged electric and a loud dreadnought both work without a setting.
