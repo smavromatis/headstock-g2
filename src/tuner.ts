@@ -238,8 +238,9 @@ export class Tuner {
       }
       if (level > gate) this.lastSoundAt = now
 
-      // A steeply falling level means the note is decaying hard, where its
-      // pitch is genuinely moving; those frames drag the estimate flat.
+      // A steeply falling level means the note is decaying hard, and its pitch
+      // is moving with it rather than being mismeasured; those frames drag the
+      // estimate flat.
       //
       // Compared against the previous frame, so prevRms is updated after this.
       // Assigning it above made the test `level < level * 0.6`, false for any
@@ -310,9 +311,9 @@ export class Tuner {
       // A challenger must win several consecutive frames before the label
       // switches, so a neighbour bleeding in cannot flip it frame to frame.
       //
-      // Unconditional: an interfering string produces a genuinely distant
-      // pitch, so "is this plausibly still the same string" cannot tell
-      // interference from a real change. The cost is a few frames of latency
+      // Unconditional: an interfering string produces a pitch just as distant
+      // as a real change does, so "is this plausibly still the same string"
+      // cannot tell the two apart. The cost is a few frames of latency
       // on every switch. Detection is never restricted, and the counter always
       // completes, so this cannot lock in.
       const current = this.lastStringIndex

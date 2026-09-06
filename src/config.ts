@@ -87,7 +87,7 @@ export const METER_INNER_PX = 120
  *
  * Someone playing nearby made a third of frames name the wrong string. This
  * only delays the label, never the detection, and the counter is unconditional,
- * so a genuine string change always lands within this many frames.
+ * so a real string change always lands within this many frames.
  */
 export const STRING_SWITCH_FRAMES = 3
 

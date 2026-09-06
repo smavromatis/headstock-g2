@@ -46,7 +46,7 @@ with them.
 Within 8 cents the window doubles to 512 ms, halving estimate variance. When a
 string is locked the search narrows to three semitones around it. Frames taken
 while the level is falling steeply are skipped, since a decaying string's pitch
-is genuinely moving.
+is moving rather than being mismeasured.
 
 ## The display
 
