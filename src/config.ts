@@ -92,22 +92,12 @@ export const METER_INNER_PX = 120
 export const STRING_SWITCH_FRAMES = 3
 
 /** Needle must move this many 5px dots before it is redrawn. */
-export const NEEDLE_HYSTERESIS_DOTS = 2
+export const NEEDLE_HYSTERESIS_DOTS = 1
 
 /** Smoothing is heavier within this distance of the target, lighter beyond. */
 export const STEADY_WITHIN_CENTS = 5
 export const SMOOTH_ALPHA_NEAR = 0.15
 export const SMOOTH_ALPHA_FAR = 0.5
-
-/**
- * Analysis window doubles inside this distance, halving estimate variance.
- *
- * Hysteresis, because the two window lengths give slightly different estimates
- * and a bare threshold let it flip every frame right where the user is making
- * the final small adjustments.
- */
-export const LONG_WINDOW_ENTER_CENTS = 8
-export const LONG_WINDOW_EXIT_CENTS = 12
 
 /** Skip a frame whose level fell by more than this fraction since the last. */
 export const DECAY_REJECT_RATIO = 0.6

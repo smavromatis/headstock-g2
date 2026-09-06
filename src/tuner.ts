@@ -1,3 +1,4 @@
+import { diagnostics } from './diagnostics'
 /**
  * Tuner state machine: audio in, view model out. No bridge calls, so it runs
  * without a device.
@@ -28,8 +29,6 @@ import {
   HZ_UPDATE_MS,
   IDLE_TIMEOUT_MS,
   IN_TUNE_CENTS,
-  LONG_WINDOW_ENTER_CENTS,
-  LONG_WINDOW_EXIT_CENTS,
   MAX_CAPO,
   MIN_GATE,
   NOISE_CREEP,
@@ -41,10 +40,7 @@ import {
   STEADY_WITHIN_CENTS,
 } from './config'
 
-/** Long window used when close to the target, for lower estimate variance. */
-const LONG_WINDOW_SIZE = WINDOW_SIZE * 2
-
-export type TunerPhase = 'starting' | 'listening' | 'reading' | 'idle' | 'micError'
+export type TunerPhase = 'starting' | 'listening' | 'reading' | 'stale' | 'idle' | 'micError'
 
 export interface TunerSettings {
   a4: number
@@ -61,6 +57,7 @@ export const DEFAULT_SETTINGS: TunerSettings = {
 
 export interface TunerView {
   phase: TunerPhase
+  measurement?: Readonly<Measurement> | null
   /** Index into STANDARD_TUNING, or null when nothing is detected. */
   stringIndex: number | null
   locked: boolean
@@ -80,12 +77,42 @@ export interface TunerView {
   capo: number
 }
 
+export interface Measurement {
+  freq: number
+  cents: number
+  target: string
+  confidence: number
+  sampleEnd: number
+  receivedAt: number
+}
+
+/** Maximum packet gap allowed to contribute to a continuous confirmation. */
+const AUDIO_GAP_MS = 250
+const ANALYSIS_HOP = 1600
+
+export function normalizeSettings(raw: unknown): TunerSettings {
+  const value = raw && typeof raw === 'object' ? (raw as Partial<TunerSettings>) : {}
+  const finite = (v: unknown, fallback: number, lo: number, hi: number) =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback
+  return {
+    a4: finite(value.a4, 440, 415, 445),
+    capo: Math.round(finite(value.capo, 0, 0, MAX_CAPO)),
+    tuningId: tuningById(typeof value.tuningId === 'string' ? value.tuningId : '').id,
+  }
+}
+
 export class Tuner {
-  private readonly ring = new AudioRingBuffer(LONG_WINDOW_SIZE * 2)
+  private readonly ring = new AudioRingBuffer(WINDOW_SIZE * 2)
   private readonly smoother = new PitchSmoother()
   private readonly window = new Float32Array(WINDOW_SIZE)
-  private readonly longWindow = new Float32Array(LONG_WINDOW_SIZE)
 
+  private sampleEnd = 0
+  private analysedEnd = 0
+  private receivedAt = -Infinity
+  private evidenceEnd = 0
+  private evidenceStart: number | null = null
+  private measurement: Measurement | null = null
+  private accepted = false
   private lastDetectionAt = 0
   private lastSoundAt = 0
   private lockedString: GuitarString | null = null
@@ -95,6 +122,7 @@ export class Tuner {
   private offScale = false
 
   // Attack rejection
+  private prevRecentRms = 0
   private prevRms = 0
   private suppressUntil = 0
 
@@ -112,7 +140,6 @@ export class Tuner {
   private shownFreqAt = 0
 
   private confirmedAt = 0
-  private longWindowActive = false
 
   // Adaptive noise gate, tracking the room rather than a fixed threshold.
   private noiseFloor = MIN_GATE
@@ -121,20 +148,32 @@ export class Tuner {
   private candidateIndex: number | null = null
   private candidateFrames = 0
 
-  settings: TunerSettings = { ...DEFAULT_SETTINGS }
+  private _settings: TunerSettings = { ...DEFAULT_SETTINGS }
+
+  get settings(): Readonly<TunerSettings> {
+    return { ...this._settings }
+  }
 
   get currentTuning(): Tuning {
     return this.tuning
   }
 
+  setA4(a4: number): void {
+    const next = normalizeSettings({ a4 }).a4
+    if (next === this._settings.a4) return
+    this._settings.a4 = next
+    this.clearSession()
+    this.reset()
+  }
+
   setTuning(id: string): void {
-    this.applyTuning(tuningById(id), this.settings.capo)
+    this.applyTuning(tuningById(id), this._settings.capo)
   }
 
   /** Sets the capo position in semitones. */
   setCapo(semitones: number): void {
-    const capo = Math.max(0, Math.min(MAX_CAPO, Math.round(semitones)))
-    if (capo === this.settings.capo) return
+    const capo = normalizeSettings({ capo: semitones }).capo
+    if (capo === this._settings.capo) return
     this.applyTuning(this.basePreset, capo)
   }
 
@@ -149,8 +188,8 @@ export class Tuner {
     const previous = this.tuning.strings.map((s, i) => ({ midi: s.midi, done: this.tuned[i] }))
 
     this.basePreset = preset
-    this.settings.tuningId = preset.id
-    this.settings.capo = capo
+    this._settings.tuningId = preset.id
+    this._settings.capo = capo
     this.tuning = transposeTuning(preset, capo)
 
     this.tuned = this.tuning.strings.map(
@@ -161,9 +200,18 @@ export class Tuner {
   }
 
   /** Feeds one audio event payload. */
-  ingest(rawPcm: unknown): void {
+  ingest(rawPcm: unknown, now = Date.now()): void {
     const samples = decodePcm(rawPcm)
     if (!samples.length) return
+    diagnostics.record({
+      kind: 'audio',
+      at: now,
+      samples: samples.length,
+      gapMs: Number.isFinite(this.receivedAt) ? now - this.receivedAt : null,
+    })
+    if (now - this.receivedAt > AUDIO_GAP_MS) this.reset()
+    this.receivedAt = now
+    this.sampleEnd += samples.length
     this.ring.push(samples)
   }
 
@@ -180,7 +228,7 @@ export class Tuner {
     else if (this.lastStringIndex !== null)
       this.lockedString = this.tuning.strings[this.lastStringIndex]
     else this.lockedString = this.tuning.strings[0]
-    this.resetSettle()
+    this.reset()
   }
 
   step(direction: 1 | -1): void {
@@ -190,8 +238,7 @@ export class Tuner {
       : (this.lastStringIndex ?? 0)
     const next = Math.max(0, Math.min(strings.length - 1, current + direction))
     this.lockedString = strings[next]
-    this.resetSettle()
-    this.smoother.reset()
+    this.reset()
   }
 
   /** Clears the six-string session progress. */
@@ -204,20 +251,27 @@ export class Tuner {
    * events arrive in small chunks that mostly re-read the same window.
    */
   advance(now: number): void {
-    // A longer window halves estimate variance. Only affordable when close,
-    // where adjustments are small and slow; further out the shorter window
-    // keeps the needle responsive.
-    const dist = this.currentCents === null ? Infinity : Math.abs(this.currentCents)
-    if (!this.longWindowActive && dist <= LONG_WINDOW_ENTER_CENTS) this.longWindowActive = true
-    else if (this.longWindowActive && dist > LONG_WINDOW_EXIT_CENTS) this.longWindowActive = false
+    const started = performance.now()
+    this.accepted = false
+    const fresh = now - this.receivedAt <= AUDIO_GAP_MS
+    const newSamples = this.sampleEnd - this.analysedEnd
+    const canAnalyse = fresh && newSamples >= ANALYSIS_HOP
+    const elapsed = (newSamples / SAMPLE_RATE) * 1000
+    if (canAnalyse) this.analysedEnd = this.sampleEnd
+    if (
+      !fresh ||
+      now - this.lastDetectionAt > AUDIO_GAP_MS ||
+      newSamples > (SAMPLE_RATE * AUDIO_GAP_MS) / 1000
+    )
+      this.resetSettle()
+    // Fixed 256ms window: doubling YIN input left phase windows unchanged.
+    // The seeded benchmark found no variance benefit and added step latency.
+    const window = this.ring.latest(WINDOW_SIZE, this.window)
 
-    const window = this.longWindowActive
-      ? (this.ring.latest(LONG_WINDOW_SIZE, this.longWindow) ??
-        this.ring.latest(WINDOW_SIZE, this.window))
-      : this.ring.latest(WINDOW_SIZE, this.window)
-
-    if (window) {
+    if (window && canAnalyse) {
       const level = rmsOf(window)
+      const recent = this.ring.latest(ANALYSIS_HOP)
+      const recentLevel = recent ? rmsOf(recent) : 0
 
       // The floor tracks the quiet moments: it follows the level down, but may
       // only creep up, and never past the current level. A note therefore
@@ -236,7 +290,7 @@ export class Tuner {
         this.resetSettle()
         this.smoother.reset()
       }
-      if (level > gate) this.lastSoundAt = now
+      if (recentLevel > gate) this.lastSoundAt = this.receivedAt
 
       // A steeply falling level means the note is decaying hard, and its pitch
       // is moving with it rather than being mismeasured; those frames drag the
@@ -245,22 +299,42 @@ export class Tuner {
       // Compared against the previous frame, so prevRms is updated after this.
       // Assigning it above made the test `level < level * 0.6`, false for any
       // level, so the rejection never ran.
-      const decaying = this.prevRms > 0 && level < this.prevRms * DECAY_REJECT_RATIO
+      const decaying =
+        (this.prevRms > 0 && level < this.prevRms * DECAY_REJECT_RATIO) ||
+        (this.prevRecentRms > 0 && recentLevel < this.prevRecentRms * DECAY_REJECT_RATIO)
+      this.prevRecentRms = recentLevel
       this.prevRms = level
 
-      if (now >= this.suppressUntil && !decaying) {
+      if (now >= this.suppressUntil && !decaying && recentLevel > gate) {
         const result = detectPitch(window, SAMPLE_RATE, {
           minRms: gate,
-          ...this.searchRange(),
+          ...this.detectionBounds,
         })
         if (result) {
           // Steady near the target, quick further out, and a marginal frame
           // moves the needle less than a clean one.
           const near =
-            this.currentCents !== null && Math.abs(this.currentCents) <= STEADY_WITHIN_CENTS
-          const alpha = (near ? SMOOTH_ALPHA_NEAR : SMOOTH_ALPHA_FAR) * result.confidence
+            this.currentCents !== null &&
+            Math.abs(this.currentCents) <= STEADY_WITHIN_CENTS &&
+            this.lastFreq !== null &&
+            Math.abs(1200 * Math.log2(result.freq / this.lastFreq)) < 2
+          const baseAlpha = (near ? SMOOTH_ALPHA_NEAR : SMOOTH_ALPHA_FAR) * result.confidence
+          const alpha = 1 - Math.pow(1 - baseAlpha, elapsed / 100)
           this.lastFreq = this.smoother.push(result.freq, alpha)
-          this.lastDetectionAt = now
+          this.lastDetectionAt = this.receivedAt
+          this.accepted = true
+          const target =
+            this.lockedString ??
+            this.tuning.strings[matchString(result.freq, this.tuning, this._settings.a4).index]
+          if (this.measurement?.target !== `${target.midi}:${this._settings.a4}`) this.resetSettle()
+          this.measurement = {
+            freq: result.freq,
+            cents: centsForString(result.freq, target, this._settings.a4),
+            target: `${target.midi}:${this._settings.a4}`,
+            confidence: result.confidence,
+            sampleEnd: this.sampleEnd,
+            receivedAt: this.receivedAt,
+          }
         }
       }
     }
@@ -273,12 +347,25 @@ export class Tuner {
       this.resetSettle()
     }
 
-    this.updateMatch()
+    const previousIndex = this.lastStringIndex
+    if (this.accepted) this.updateMatch()
+    if (previousIndex !== this.lastStringIndex) this.shownFreq = null
+    if (canAnalyse && !this.accepted) this.resetSettle()
 
     this.updateSettle(now)
     this.advanceLock(now)
     this.updateShownFreq(now)
     this.updatePhase(now)
+    if (canAnalyse)
+      diagnostics.record({
+        kind: 'measurement',
+        at: now,
+        accepted: this.accepted,
+        confidence: this.accepted ? (this.measurement?.confidence ?? null) : null,
+        cents: this.accepted ? (this.measurement?.cents ?? null) : null,
+        sampleEnd: this.sampleEnd,
+        processingMs: performance.now() - started,
+      })
   }
 
   /**
@@ -290,9 +377,15 @@ export class Tuner {
    * timer, and the window never widened again. Measured as a permanent
    * failure to detect two of ten string changes, and 1.6s on the rest.
    */
-  private searchRange(): { fMin?: number; fMax?: number } {
-    if (!this.lockedString) return {}
-    const centre = midiToFreq(this.lockedString.midi, this.settings.a4)
+  get detectionBounds(): { fMin: number; fMax: number } {
+    if (!this.lockedString) {
+      const frequencies = this.tuning.strings.map((s) => midiToFreq(s.midi, this._settings.a4))
+      return {
+        fMin: Math.min(...frequencies) * 2 ** -0.25,
+        fMax: Math.max(...frequencies) * 2 ** 0.25,
+      }
+    }
+    const centre = midiToFreq(this.lockedString.midi, this._settings.a4)
     return { fMin: centre * Math.pow(2, -0.25), fMax: centre * Math.pow(2, 0.25) }
   }
 
@@ -301,12 +394,12 @@ export class Tuner {
 
     if (this.lockedString) {
       this.lastStringIndex = this.tuning.strings.indexOf(this.lockedString)
-      this.currentCents = centsForString(this.lastFreq, this.lockedString, this.settings.a4)
+      this.currentCents = centsForString(this.lastFreq, this.lockedString, this._settings.a4)
       // A locked string is never off-scale: the user has said what they are
       // tuning, so target and direction stay on screen however far out.
       this.offScale = false
     } else {
-      const m = matchString(this.lastFreq, this.tuning, this.settings.a4)
+      const m = matchString(this.lastFreq, this.tuning, this._settings.a4)
 
       // A challenger must win several consecutive frames before the label
       // switches, so a neighbour bleeding in cannot flip it frame to frame.
@@ -333,30 +426,46 @@ export class Tuner {
 
       // Cents always measured against the string actually shown.
       const shown = this.tuning.strings[this.lastStringIndex ?? m.index]
-      this.currentCents = centsForString(this.lastFreq, shown, this.settings.a4)
+      this.currentCents = centsForString(this.lastFreq, shown, this._settings.a4)
 
       // While a switch is pending the shown string is not the one being
       // played, so its cents are meaningless: measuring the high E against A2
       // gives 1885 cents and pins the needle to the rail under the wrong
       // name. Show nothing for those frames instead of something wrong.
       //
-      // One stray frame does not count. A single bad reading used to blank the
-      // display for a frame, which flickered between the note and NO STRING
-      // MATCH; holding the last good reading through it is correct.
-      const settling = this.candidateFrames > 1
-      this.offScale = !m.inRange || settling
+      // Median filtering already rejects isolated pitch outliers. Hide the
+      // meter for every remaining pending switch, including its first frame.
+      const settling = this.candidateFrames > 0
+      this.offScale =
+        !m.inRange || settling || this.measurement?.target !== `${shown.midi}:${this._settings.a4}`
     }
   }
 
   private currentCents: number | null = null
 
   private updateSettle(now: number): void {
-    const c = this.currentCents
-    const usable = c !== null && this.lastFreq !== null && !this.offScale
+    if (!this.accepted) return
+    const c = this.measurement?.cents ?? null
+    const target = this.lastStringIndex === null ? null : this.tuning.strings[this.lastStringIndex]
+    const usable =
+      c !== null &&
+      !this.offScale &&
+      target !== null &&
+      this.measurement?.target === `${target.midi}:${this._settings.a4}`
 
     if (usable && Math.abs(c) <= IN_TUNE_CENTS) {
-      if (this.inToleranceSince === null) this.inToleranceSince = now
-      if (!this.confirmed && now - this.inToleranceSince >= CONFIRM_HOLD_MS) {
+      if (this.inToleranceSince === null) {
+        this.inToleranceSince = now
+        this.evidenceStart = this.sampleEnd
+      }
+      // Overlapping windows do not count their old samples a second time.
+      this.evidenceEnd = this.sampleEnd
+      if (
+        !this.confirmed &&
+        now - this.inToleranceSince >= CONFIRM_HOLD_MS &&
+        ((this.evidenceEnd - (this.evidenceStart ?? this.sampleEnd)) / SAMPLE_RATE) * 1000 >=
+          CONFIRM_HOLD_MS
+      ) {
         this.confirmed = true
         this.confirmedAt = now
         if (this.lastStringIndex !== null) this.tuned[this.lastStringIndex] = true
@@ -400,8 +509,7 @@ export class Tuner {
       const i = (from + step) % strings.length
       if (!this.tuned[i]) {
         this.lockedString = strings[i]
-        this.resetSettle()
-        this.smoother.reset()
+        this.reset()
         return
       }
     }
@@ -410,7 +518,11 @@ export class Tuner {
   private updatePhase(now: number): void {
     if (this.phase === 'micError' || this.phase === 'idle') return
     const fresh = this.lastFreq !== null && now - this.lastDetectionAt <= READING_HOLD_MS
-    this.phase = fresh ? 'reading' : 'listening'
+    this.phase = fresh
+      ? now - this.receivedAt <= AUDIO_GAP_MS && this.accepted
+        ? 'reading'
+        : 'stale'
+      : 'listening'
   }
 
   /** True when nothing has been heard for long enough to release the mic. */
@@ -419,6 +531,7 @@ export class Tuner {
   }
 
   private resetSettle(): void {
+    this.evidenceStart = null
     this.inToleranceSince = null
     this.confirmed = false
   }
@@ -426,28 +539,40 @@ export class Tuner {
   /** Current view. Pure, so it is safe to call as often as needed. */
   view(): TunerView {
     const cents = this.lastFreq === null ? null : this.currentCents
-    const inTolerance = cents !== null && !this.offScale && Math.abs(cents) <= IN_TUNE_CENTS
+    const inTolerance =
+      this.phase === 'reading' &&
+      cents !== null &&
+      !this.offScale &&
+      Math.abs(this.measurement?.cents ?? Infinity) <= IN_TUNE_CENTS
 
     return {
       phase: this.phase,
-      stringIndex: this.lastStringIndex,
+      measurement: this.measurement ? { ...this.measurement } : null,
+      stringIndex: this.lockedString
+        ? this.tuning.strings.indexOf(this.lockedString)
+        : this.lastStringIndex,
       locked: this.lockedString !== null,
       cents,
       freq: this.shownFreq,
-      a4: this.settings.a4,
+      a4: this._settings.a4,
       offScale: this.offScale,
       inTolerance,
       confirmed: this.confirmed,
-      tuned: this.tuned,
+      tuned: [...this.tuned],
       tuning: this.tuning,
-      capo: this.settings.capo,
+      capo: this._settings.capo,
     }
   }
 
   reset(): void {
+    this.sampleEnd = 0
+    this.analysedEnd = 0
+    this.receivedAt = -Infinity
+    this.measurement = null
+    this.offScale = false
+    this.accepted = false
     this.candidateIndex = null
     this.candidateFrames = 0
-    this.longWindowActive = false
     this.ring.clear()
     this.smoother.reset()
     this.shownFreq = null
@@ -455,6 +580,7 @@ export class Tuner {
     this.lastStringIndex = null
     this.currentCents = null
     this.lastDetectionAt = 0
+    this.prevRecentRms = 0
     this.prevRms = 0
     this.suppressUntil = 0
     this.resetSettle()

@@ -1,3 +1,4 @@
+import { random } from './seeded'
 /**
  * Detection regression tests. Run with: npm run check:detection
  *
@@ -30,7 +31,7 @@ function pluck(f0: number, n: number, phase = 0.3, weak = true): Float32Array {
         partials[k] *
         Math.sin(2 * Math.PI * f0 * (k + 1) * (1 + 2e-4 * k * k) * (i / SR) + phase * (k + 1))
     }
-    buf[i] = 0.22 * Math.exp(-2.2 * (i / SR)) * s + 0.004 * (Math.random() * 2 - 1)
+    buf[i] = 0.22 * Math.exp(-2.2 * (i / SR)) * s + 0.004 * (random() * 2 - 1)
   }
   return buf
 }
@@ -74,7 +75,7 @@ function runSustained(freq: number, seconds: number) {
   let now = 0
   for (let step = 0; step < seconds * 10; step++) {
     now += 100
-    tuner.ingest(chunk(1600))
+    tuner.ingest(chunk(1600), now)
     tuner.advance(now)
     if (now > 1500) readings.push(tuner.view().freq)
   }
@@ -130,7 +131,7 @@ function runDamped(f0: number, dampRate: number, slideCents: number) {
       bytes[i * 2 + 1] = (q >> 8) & 0xff
       t += 1 / SR
     }
-    tuner.ingest(bytes)
+    tuner.ingest(bytes, step * 100 + 100)
     tuner.advance(step * 100 + 100)
     // Only frames after the damping starts matter.
     if (t > 2.2) {

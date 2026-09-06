@@ -1,3 +1,4 @@
+import { diagnostics } from '../diagnostics'
 /**
  * Glasses display.
  *
@@ -130,7 +131,7 @@ export function needleDot(cents: number): number {
 }
 
 export function buildNeedleRow(view: TunerView, dot?: number): string {
-  if (view.cents === null || view.stringIndex === null) {
+  if (view.cents === null || view.stringIndex === null || view.offScale) {
     return '·'.repeat(NEEDLE_DOTS)
   }
   const index = dot ?? needleDot(view.cents)
@@ -172,7 +173,8 @@ export function buildHeaderRow(view: TunerView): string {
 export function buildReadoutRow(view: TunerView): string {
   if (view.phase === 'micError') return centreish('MICROPHONE UNAVAILABLE', ROW_W)
   if (view.phase === 'idle') return centreish('TAP TO RESUME', ROW_W)
-  if (view.cents === null || view.stringIndex === null) {
+  if (view.phase === 'stale') return centreish('PLAY A STRING', ROW_W)
+  if (view.cents === null || view.stringIndex === null || view.offScale) {
     return centreish('PLAY A STRING', ROW_W)
   }
   if (view.offScale) return centreish('NO STRING MATCH', ROW_W)
@@ -271,6 +273,12 @@ export class GlassesRenderer {
   private lastColor = new Map<string, number>()
   private pending: TunerView | null = null
   private flushing = false
+  private generation = 0
+  private pendingAt = 0
+  private retryAt = 0
+  private failures = 0
+  private target = ''
+  private frameTarget = ''
 
   private readonly bridge: EvenAppBridge
   private readonly queue: BridgeQueue
@@ -317,6 +325,12 @@ export class GlassesRenderer {
   }
 
   render(view: TunerView): void {
+    const target = `${view.tuning.id}:${view.capo}:${view.a4}:${view.stringIndex}:${view.locked}`
+    if (target !== this.frameTarget) {
+      this.invalidate()
+      this.frameTarget = target
+    }
+    this.pendingAt = Date.now()
     this.pending = view
     void this.flush()
   }
@@ -328,23 +342,24 @@ export class GlassesRenderer {
    */
   async rebuild(view: TunerView): Promise<void> {
     this.invalidate()
-    await this.queue.run(() => this.bridge.rebuildPageContainer(GlassesRenderer.rebuildPage(view)))
-    this.render(view)
+    const generation = this.generation
+    await this.queue.run(() =>
+      generation === this.generation
+        ? this.bridge.rebuildPageContainer(GlassesRenderer.rebuildPage(view))
+        : Promise.resolve(false),
+    )
+    if (generation === this.generation && !this.pending) this.render(view)
   }
 
-  /**
-   * Needle position with hysteresis.
-   *
-   * A real string wanders a cent or two while it decays, which was enough to
-   * hop the needle between adjacent cells continuously. It has to move more
-   * than one dot before it is redrawn, which removes the flicker without
-   * capping how far it can travel.
-   */
+  /** Quantize the filtered cents once, at the physical five-pixel grid. */
   private steadyNeedleDot(view: TunerView): number | undefined {
-    if (view.cents === null || view.stringIndex === null) {
+    if (view.cents === null || view.stringIndex === null || view.offScale) {
       this.lastNeedleDot = null
       return undefined
     }
+    const target = `${view.tuning.id}:${view.capo}:${view.a4}:${view.stringIndex}:${view.locked}`
+    if (target !== this.target) this.lastNeedleDot = null
+    this.target = target
     const dot = needleDot(view.cents)
     if (
       this.lastNeedleDot !== null &&
@@ -358,15 +373,24 @@ export class GlassesRenderer {
 
   /** Forces the next render to resend every row (used after a foreground return). */
   invalidate(): void {
+    this.generation++
+    this.pending = null
+    this.lastNeedleDot = null
+    this.retryAt = 0
     this.lastSent.clear()
     this.lastColor.clear()
   }
 
   private async flush(): Promise<void> {
-    if (this.flushing) return
+    if (this.flushing || Date.now() < this.retryAt) return
     this.flushing = true
     try {
       while (this.pending) {
+        if (Date.now() - this.pendingAt > 500) {
+          this.pending = null
+          break
+        }
+        const generation = this.generation
         const view = this.pending
         this.pending = null
 
@@ -375,7 +399,7 @@ export class GlassesRenderer {
         const rows: RowSpec[] = [
           [CONTAINERS.header, buildHeaderRow(view), CONTAINERS.header.color],
           // Dim a stale reading, so a decayed string never looks live.
-          [CONTAINERS.note, buildNoteBlock(view), view.phase === 'reading' ? 4 : 2],
+          [CONTAINERS.note, buildNoteBlock(view), view.phase === 'reading' ? 4 : 1],
           // One continuous scale, so this only changes when the in-tune band
           // moves; it is sent for the initial draw and after a rebuild.
           [CONTAINERS.scale, buildScaleRow(), 2],
@@ -388,7 +412,8 @@ export class GlassesRenderer {
           [CONTAINERS.strings, buildStringsRow(view), CONTAINERS.strings.color],
         ]
 
-        await this.sendRows(rows)
+        await this.sendRows(rows, generation)
+        if (Date.now() < this.retryAt) break
       }
     } finally {
       this.flushing = false
@@ -396,41 +421,36 @@ export class GlassesRenderer {
   }
 
   /** Sends only the rows whose content or brightness actually changed. */
-  private async sendRows(rows: RowSpec[]): Promise<void> {
+  private async sendRows(rows: RowSpec[], generation: number): Promise<void> {
+    const expiresAt = Date.now() + 500
     for (const [c, content, color] of rows) {
-      if (this.lastSent.get(c.name) === content && this.lastColor.get(c.name) === color) {
-        continue
+      if (generation !== this.generation || Date.now() > expiresAt) return
+      if (this.lastSent.get(c.name) === content && this.lastColor.get(c.name) === color) continue
+      const ok = await this.queue.run(() =>
+        generation === this.generation && Date.now() <= expiresAt
+          ? this.bridge.textContainerUpgrade(
+              new TextContainerUpgrade({
+                containerID: c.id,
+                containerName: c.name,
+                contentOffset: 0,
+                contentLength: 0,
+                content,
+                textColor: color,
+              }),
+            )
+          : Promise.resolve(false),
+      )
+      if (generation !== this.generation || Date.now() > expiresAt) return
+      if (ok !== true) {
+        this.failures++
+        this.retryAt = Date.now() + Math.min(2000, 100 * 2 ** Math.min(5, this.failures))
+        return
       }
+      if (c.name === 'needle')
+        diagnostics.record({ kind: 'pointer', at: Date.now(), dot: this.lastNeedleDot, generation })
+      this.failures = 0
       this.lastSent.set(c.name, content)
       this.lastColor.set(c.name, color)
-      await this.upgrade(c.id, c.name, content, color)
-    }
-  }
-
-  /** One in-place text update, queued behind any other bridge call. */
-  private async upgrade(
-    id: number,
-    name: string,
-    content: string,
-    textColor: number,
-  ): Promise<void> {
-    const ok = await this.queue.run(() =>
-      this.bridge.textContainerUpgrade(
-        new TextContainerUpgrade({
-          containerID: id,
-          containerName: name,
-          // Offset and length both zero replaces the whole content.
-          contentOffset: 0,
-          contentLength: 0,
-          content,
-          textColor,
-        }),
-      ),
-    )
-    if (ok === null) {
-      // Dropped or timed out. Forget what we think is on screen so the next
-      // frame resends this row instead of skipping it as unchanged.
-      this.lastSent.delete(name)
     }
   }
 }

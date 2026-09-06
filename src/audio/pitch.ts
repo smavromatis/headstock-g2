@@ -8,7 +8,7 @@
 
 /** Guitar search range, a few semitones either side of E2..E4. */
 export const F_MIN = 65 // Hz, ~C2 - comfortably below a flat low E
-export const F_MAX = 420 // Hz, ~G#4 - comfortably above a sharp high E
+export const F_MAX = 1000 // Hz, ~G#4 - comfortably above a sharp high E
 
 /**
  * Analysis window in samples (256 ms at 16 kHz).
@@ -52,14 +52,15 @@ export function detectPitch(
   const minConfidence = opts.minConfidence ?? 0.55
   // Narrowing the search to the expected string removes octave errors outright
   // and stops noise outside the band from being considered at all.
-  const fMin = Math.max(F_MIN, opts.fMin ?? F_MIN)
-  const fMax = Math.min(F_MAX, opts.fMax ?? F_MAX)
+  const fMin = Math.max(20, opts.fMin ?? F_MIN)
+  const fMax = Math.min(sampleRate / 2 - 1, opts.fMax ?? F_MAX)
 
+  if (!buf.every(Number.isFinite) || !Number.isFinite(sampleRate) || sampleRate <= 0) return null
   const rms = rmsOf(buf)
   if (rms < minRms) return null
 
-  const tauMin = Math.max(2, Math.floor(sampleRate / fMax))
-  const tauMax = Math.min(Math.ceil(sampleRate / fMin), (buf.length / 2) | 0)
+  const tauMin = Math.max(2, Math.floor(sampleRate / fMax) - 2)
+  const tauMax = Math.min(Math.ceil(sampleRate / fMin) + 2, (buf.length / 2) | 0)
   if (tauMax <= tauMin + 2) return null
 
   // --- Stage 1: YIN ------------------------------------------------------
@@ -120,17 +121,19 @@ export function detectPitch(
   if (tauRefined <= 0) return null
 
   const coarse = sampleRate / tauRefined
-  if (coarse < fMin || coarse > fMax) return null
+  // Integer-lag interpolation needs neighbours beyond the requested bounds.
+  // Enforce the actual bounds on the refined result, not the coarse lag.
 
   // Two passes: the first moves the analysis bin onto the fundamental, the
   // second removes the residual bias from the bin having been offset.
   let freq = coarse
   for (let pass = 0; pass < 2; pass++) {
     const refined = refineByPhase(buf, sampleRate, freq)
-    if (refined === null) break
+    if (refined === null) return null
     freq = refined
   }
 
+  if (freq < fMin || freq > fMax) return null
   return { freq, confidence, rms }
 }
 
@@ -158,7 +161,7 @@ function refineByPhase(buf: Float32Array, sampleRate: number, f0: number): numbe
   delta -= 2 * Math.PI * Math.round(delta / (2 * Math.PI))
 
   const corrected = f0 + (delta * sampleRate) / (2 * Math.PI * hop)
-  if (!Number.isFinite(corrected) || corrected < F_MIN || corrected > F_MAX) return null
+  if (!Number.isFinite(corrected) || corrected <= 0 || corrected >= sampleRate / 2) return null
   // The phase step should only nudge.
   if (Math.abs(corrected - f0) > f0 * 0.05) return null
   return corrected
@@ -183,7 +186,11 @@ function goertzelPhase(
     re += s * Math.cos(angle)
     im -= s * Math.sin(angle)
   }
-  if (re === 0 && im === 0) return null
+  // A vanishing fundamental has arbitrary phase even when YIN is periodic.
+  // Compare its coherent amplitude with the window RMS before refinement.
+  let energy = 0
+  for (let n = 0; n < len; n++) energy += buf[start + n] ** 2
+  if ((Math.hypot(re, im) * 4) / len < Math.sqrt(energy / len) * 0.1) return null
   // Phase referenced to the window start.
   return Math.atan2(im, re)
 }

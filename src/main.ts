@@ -1,3 +1,4 @@
+import { diagnostics } from './diagnostics'
 /**
  * Headstock - a guitar tuner for Even Realities G2.
  *
@@ -7,7 +8,6 @@
 
 import {
   waitForEvenAppBridge,
-  AudioInputSource,
   OsEventTypeList,
   StartUpPageCreateResult,
   validateEvenHubPageContainer,
@@ -16,10 +16,11 @@ import {
   type EvenHubEvent,
 } from '@evenrealities/even_hub_sdk'
 
-import { Tuner, DEFAULT_SETTINGS, type TunerSettings } from './tuner'
+import { Tuner, DEFAULT_SETTINGS, normalizeSettings } from './tuner'
 import { GlassesRenderer, tuningIdForMenuItem } from './glasses/display'
 import { BridgeQueue } from './bridge-queue'
-import { MIC_CONTROL_TIMEOUT_MS } from './config'
+import { Microphone } from './microphone'
+import { decodePcm } from './audio/stream'
 import { mountPhoneUi, type PhoneUi } from './phone/ui'
 import { midiToFreq } from './tuning/notes'
 
@@ -55,6 +56,8 @@ let exitDialogOpenedAt = 0
  * repainting underneath it would draw over whatever the user is looking at.
  */
 let backgrounded = false
+let resumeMicOnForeground = false
+let bridgeWasDegraded = false
 
 /**
  * Assumed true until the host says otherwise: onDeviceStatusChanged never
@@ -69,6 +72,7 @@ const SETTINGS_KEY = 'headstock.settings.v1'
 const tuner = new Tuner()
 const queue = new BridgeQueue()
 let bridge: EvenAppBridge | null = null
+let microphone: Microphone | null = null
 let renderer: GlassesRenderer | null = null
 let phone: PhoneUi | null = null
 let frameTimer: ReturnType<typeof setInterval> | null = null
@@ -78,7 +82,7 @@ const teardown: Array<() => void> = []
 async function main(): Promise<void> {
   phone = mountPhoneUi({
     onA4Change: (a4) => {
-      tuner.settings.a4 = a4
+      tuner.setA4(a4)
       persistSettings()
       paint()
     },
@@ -98,9 +102,13 @@ async function main(): Promise<void> {
     },
   })
 
+  window.addEventListener('beforeunload', cleanup)
   bridge = await waitForEvenAppBridge()
+  if (cleanedUp) return
+  microphone = new Microphone(bridge, queue)
 
   await loadSettings()
+  if (cleanedUp) return
 
   if (!(await setUpGlasses())) {
     phone?.setStatus({
@@ -110,6 +118,7 @@ async function main(): Promise<void> {
     return
   }
 
+  if (cleanedUp) return
   teardown.push(bridge.onEvenHubEvent(onHubEvent))
   teardown.push(
     bridge.onDeviceStatusChanged((status) => {
@@ -121,11 +130,16 @@ async function main(): Promise<void> {
       if (connected === glassesConnected) return
       glassesConnected = connected
 
+      tuner.reset()
+      if (!connected) microphone?.disconnected()
       if (connected) {
+        if (!backgrounded && tuner.currentPhase !== 'idle') void startMic()
         renderer?.invalidate()
         phone?.setStatus({ connection: 'ok', message: '' })
         paint()
       } else {
+        renderer?.invalidate()
+        phone?.setMic({ active: false })
         phone?.setStatus({
           connection: 'degraded',
           message: 'Glasses disconnected. Reconnect them to carry on tuning.',
@@ -135,10 +149,10 @@ async function main(): Promise<void> {
   )
 
   await startMic()
+  if (cleanedUp) return
 
   inputArmedAt = Date.now() + INPUT_ARM_MS
   frameTimer = setInterval(tick, FRAME_MS)
-  window.addEventListener('beforeunload', cleanup)
 
   installDevHarness()
 }
@@ -161,11 +175,12 @@ async function setUpGlasses(): Promise<boolean> {
     return false
   }
 
-  // Startup calls are issued directly: the frame loop has not started, so
-  // there is nothing for them to race with.
+  // Startup and fallback use the same physical lane as every later call.
   let result: StartUpPageCreateResult
   try {
-    result = await bridge.createStartUpPageContainer(page)
+    const created = await queue.run(() => bridge!.createStartUpPageContainer(page))
+    if (created === null) return false
+    result = created
   } catch {
     return false
   }
@@ -177,7 +192,7 @@ async function setUpGlasses(): Promise<boolean> {
     // hot reload. Rebuild is the way back in.
     const recovered =
       result === StartUpPageCreateResult.invalid &&
-      (await bridge.rebuildPageContainer(GlassesRenderer.rebuildPage(view)).catch(() => false))
+      (await queue.run(() => bridge!.rebuildPageContainer(GlassesRenderer.rebuildPage(view))))
     if (!recovered) return false
     console.log('HEADSTOCK_RECOVERED_VIA_REBUILD')
   }
@@ -191,12 +206,12 @@ async function setUpGlasses(): Promise<boolean> {
 
 async function startMic(): Promise<void> {
   if (!bridge) return
+  tuner.reset()
   try {
-    const ok = await queue.run(
-      () => bridge!.audioControl(true, AudioInputSource.Glasses),
-      MIC_CONTROL_TIMEOUT_MS,
-    )
+    const ok = await microphone?.start()
+    if (!microphone?.wanted) return
     if (!ok) throw new Error('audioControl did not start')
+    if (cleanedUp || !glassesConnected) return
     tuner.setPhase('listening')
     tuner.markActive(Date.now())
     phone?.setMic({ active: true })
@@ -218,7 +233,12 @@ async function goIdle(): Promise<void> {
   // Progress is kept: a pause is not a reason to discard the strings already
   // tuned.
   tuner.reset()
-  await queue.run(() => bridge!.audioControl(false), MIC_CONTROL_TIMEOUT_MS)
+  await microphone?.stop()
+  if (microphone?.state === 'error')
+    phone?.setStatus({
+      connection: 'degraded',
+      message: 'Microphone stop was not confirmed. Close and reopen Headstock if needed.',
+    })
   phone?.setMic({ active: false })
   paint()
 }
@@ -232,17 +252,22 @@ async function resumeFromIdle(): Promise<void> {
 // --- Events --------------------------------------------------------------
 
 function onHubEvent(event: EvenHubEvent): void {
+  if (cleanedUp) return
   if (event.audioEvent) {
+    if (backgrounded || !glassesConnected || tuner.currentPhase === 'idle') return
+    if (!decodePcm(event.audioEvent.audioPcm).length || !microphone?.observeAudio()) return
     // Audio arriving is proof the microphone is live, whatever audioControl
     // reported. Its result cannot be trusted alone: the call can time out
     // behind a permission dialog and still succeed, which left a permanent
     // "microphone did not start" on screen while the mic was running.
-    if (tuner.currentPhase === 'micError') {
+    if (tuner.currentPhase === 'micError' || tuner.currentPhase === 'starting') {
       tuner.setPhase('listening')
       tuner.markActive(Date.now())
       phone?.setMic({ active: true })
       phone?.setStatus({ connection: 'ok', message: '' })
     }
+
+    phone?.setMic({ active: true })
 
     // The host still pushes live mic audio during a demo; mixing it with the
     // synthetic tone interleaves silence and makes the reading drift.
@@ -299,6 +324,7 @@ function onHubEvent(event: EvenHubEvent): void {
       case OsEventTypeList.DOUBLE_CLICK_EVENT:
         // Nothing is torn down here: the user can still cancel, and cleaning
         // up now would leave a live app that has stopped listening.
+        renderer?.invalidate()
         exitDialogOpen = true
         exitDialogOpenedAt = Date.now()
         void queue.run(() => bridge!.shutDownPageContainer(1))
@@ -309,10 +335,18 @@ function onHubEvent(event: EvenHubEvent): void {
         closeExitDialog()
         tuner.reset()
         renderer?.invalidate()
+        if (resumeMicOnForeground && glassesConnected) void startMic()
+        resumeMicOnForeground = false
         paint()
         break
       case OsEventTypeList.FOREGROUND_EXIT_EVENT:
+        if (backgrounded) break
         backgrounded = true
+        resumeMicOnForeground = microphone?.wanted ?? false
+        void microphone?.stop()
+        phone?.setMic({ active: false })
+        tuner.reset()
+        renderer?.invalidate()
         flushSettings()
         break
       case OsEventTypeList.ABNORMAL_EXIT_EVENT:
@@ -335,8 +369,18 @@ function tick(): void {
   // Idle means the microphone is closed, so there is nothing new to analyse
   // and nothing on screen that changes. Running detection anyway burned a full
   // YIN pass every 100ms over a buffer that cannot change.
-  if (tuner.currentPhase === 'idle') return
+  if (cleanedUp || backgrounded || !glassesConnected || tuner.currentPhase === 'idle') return
 
+  if (queue.state === 'degraded')
+    phone?.setStatus({
+      connection: 'degraded',
+      message: 'Waiting for the glasses. If this persists, close and reopen Headstock.',
+    })
+  if (bridgeWasDegraded && queue.state === 'ready' && microphone?.state === 'active') {
+    phone?.setStatus({ connection: 'ok', message: '' })
+    renderer?.invalidate()
+  }
+  bridgeWasDegraded = queue.state === 'degraded'
   tuner.advance(now)
 
   if (tuner.isIdle(now)) {
@@ -360,7 +404,12 @@ function redrawGlasses(): void {
     paint()
     return
   }
-  void renderer?.rebuild(tuner.view())
+  if (exitDialogOpen || backgrounded || !glassesConnected) {
+    renderer.invalidate()
+    paint()
+    return
+  }
+  void renderer.rebuild(tuner.view())
 }
 
 function paint(): void {
@@ -409,25 +458,19 @@ function flushSettings(): void {
 async function loadSettings(): Promise<void> {
   if (!bridge) return
   try {
-    const raw = await bridge.getLocalStorage(SETTINGS_KEY)
+    const raw = await queue.run(() => bridge!.getLocalStorage(SETTINGS_KEY))
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<TunerSettings>
-      tuner.settings = {
-        a4: clamp(parsed.a4 ?? DEFAULT_SETTINGS.a4, 415, 445),
-        tuningId: parsed.tuningId ?? DEFAULT_SETTINGS.tuningId,
-        capo: clamp(parsed.capo ?? DEFAULT_SETTINGS.capo, 0, 12),
-      }
-      tuner.setTuning(tuner.settings.tuningId)
-      tuner.setCapo(tuner.settings.capo)
+      const settings = normalizeSettings(JSON.parse(raw))
+      tuner.setA4(settings.a4)
+      tuner.setTuning(settings.tuningId)
+      tuner.setCapo(settings.capo)
     }
   } catch {
-    tuner.settings = { ...DEFAULT_SETTINGS }
+    tuner.setA4(DEFAULT_SETTINGS.a4)
+    tuner.setTuning(DEFAULT_SETTINGS.tuningId)
+    tuner.setCapo(DEFAULT_SETTINGS.capo)
   }
   phone?.setSettings(tuner.settings)
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v))
 }
 
 // --- Development harness -------------------------------------------------
@@ -489,6 +532,8 @@ function installDevHarness(): void {
   }
 
   const win = window as unknown as Record<string, unknown>
+  diagnostics.enabled = new URLSearchParams(location.search).has('diagnostics')
+  win.__headstockDiagnostics = diagnostics
   win.__headstock = {
     play,
     string(index: number, cents = 0) {
@@ -523,6 +568,8 @@ let cleanedUp = false
 function cleanup(): void {
   if (cleanedUp) return
   cleanedUp = true
+  renderer?.invalidate()
+  tuner.reset()
 
   if (frameTimer) clearInterval(frameTimer)
   frameTimer = null
@@ -531,7 +578,7 @@ function cleanup(): void {
   flushSettings()
 
   // Otherwise the mic keeps draining the glasses after exit.
-  void queue.run(() => bridge!.audioControl(false))
+  void microphone?.stop()
   for (const off of teardown.splice(0)) {
     try {
       off()

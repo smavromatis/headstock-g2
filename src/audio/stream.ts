@@ -47,47 +47,29 @@ export class AudioRingBuffer {
 export function decodePcm(raw: unknown): Float32Array {
   if (raw == null) return new Float32Array(0)
 
-  if (typeof raw === 'string') return int16BytesToFloat(base64ToBytes(raw))
+  if (typeof raw === 'string') {
+    try {
+      return int16BytesToFloat(base64ToBytes(raw))
+    } catch {
+      return new Float32Array(0)
+    }
+  }
   if (raw instanceof Uint8Array) return int16BytesToFloat(raw)
   if (raw instanceof ArrayBuffer) return int16BytesToFloat(new Uint8Array(raw))
-  if (ArrayBuffer.isView(raw)) {
-    const v = raw as ArrayBufferView
-    return int16BytesToFloat(new Uint8Array(v.buffer, v.byteOffset, v.byteLength))
-  }
 
   if (Array.isArray(raw)) return decodeNumberArray(raw as number[])
 
   return new Float32Array(0)
 }
 
-/**
- * A number[] may be bytes or 16-bit samples. Deciding per call would flip
- * interpretation mid-note, since a quiet passage of samples stays under 255.
- * Decided once, on the first payload that proves it, then held.
- */
-type ArrayPcmFormat = 'unknown' | 'bytes' | 'samples'
-let arrayFormat: ArrayPcmFormat = 'unknown'
-
+/** JSON arrays are bytes, exactly as documented; never infer a format from amplitude. */
 function decodeNumberArray(raw: number[]): Float32Array {
-  if (arrayFormat === 'unknown') {
-    for (let i = 0; i < raw.length; i++) {
-      if (Math.abs(raw[i]) > 255) {
-        arrayFormat = 'samples'
-        break
-      }
-    }
-  }
-
-  // Default to bytes: that is what the host documents and sends.
-  if (arrayFormat === 'samples') {
-    const out = new Float32Array(raw.length)
-    for (let i = 0; i < raw.length; i++) out[i] = raw[i] / 32768
-    return out
-  }
+  if (!raw.every((v) => Number.isInteger(v) && v >= 0 && v <= 255)) return new Float32Array(0)
   return int16BytesToFloat(Uint8Array.from(raw))
 }
 
 function int16BytesToFloat(bytes: Uint8Array): Float32Array {
+  if (bytes.length % 2) return new Float32Array(0)
   const n = bytes.length >> 1
   const out = new Float32Array(n)
   for (let i = 0; i < n; i++) {
@@ -116,7 +98,7 @@ export class PitchSmoother {
   private ema: number | null = null
 
   constructor(
-    private readonly medianLength = 5,
+    private readonly medianLength = 3,
     private readonly alpha = 0.4,
   ) {}
 
@@ -132,7 +114,7 @@ export class PitchSmoother {
     if (this.ema === null || Math.abs(1200 * Math.log2(median / this.ema)) > 100) {
       this.ema = median
     } else {
-      this.ema = this.ema + alpha * (median - this.ema)
+      this.ema = Math.exp(Math.log(this.ema) + alpha * Math.log(median / this.ema))
     }
     return this.ema
   }

@@ -229,23 +229,26 @@ export function mountPhoneUi(handlers: PhoneUiHandlers): PhoneUi {
       const s = view.tuning.strings[view.stringIndex!]
       const cents = view.cents!
 
-      noteEl.dataset.idle = 'false'
+      noteEl.dataset.idle = String(view.phase === 'stale')
       noteEl.textContent = s.label
 
-      centsEl.dataset.idle = 'false'
+      centsEl.dataset.idle = String(view.phase === 'stale')
       centsEl.dataset.tuned = String(view.confirmed)
       const abs = Math.abs(cents)
       const magnitude = abs >= 10 ? abs.toFixed(0) : abs.toFixed(1)
       centsEl.textContent = `${cents > 0 ? '+' : '−'}${magnitude}`
 
       actionEl.dataset.tuned = String(view.confirmed)
-      actionEl.textContent = view.confirmed
-        ? 'in tune'
-        : abs <= IN_TUNE_CENTS
-          ? 'hold'
-          : cents > 0
-            ? 'loosen'
-            : 'tighten'
+      actionEl.textContent =
+        view.phase === 'stale'
+          ? 'play a string'
+          : view.confirmed
+            ? 'in tune'
+            : abs <= IN_TUNE_CENTS
+              ? 'hold'
+              : cents > 0
+                ? 'loosen'
+                : 'tighten'
 
       // Same expanded-centre curve as the glasses, so both agree.
       // Shown always, not only when in tune: comparing this figure between the

@@ -14,11 +14,15 @@
     "prebuild": "node scripts/gen-metrics.mjs",
     "check:detection": "esbuild scripts/check-detection.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-detection.mjs --log-level=error && node node_modules/.cache/check-detection.mjs",
     "check:layout": "esbuild scripts/check-layout.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-layout.mjs --log-level=error && node node_modules/.cache/check-layout.mjs",
-    "check": "npm run check:docs && npm run check:glyphs && npm run check:layout && npm run check:detection && npm run check:robustness",
+    "check": "npm run check:docs && npm run check:glyphs && npm run check:layout && npm run check:detection && npm run check:robustness && npm run check:types && npm run check:correctness && npm run benchmark",
     "check:robustness": "esbuild scripts/check-robustness.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-robustness.mjs --log-level=error && node node_modules/.cache/check-robustness.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "check:correctness": "esbuild scripts/check-correctness.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-correctness.mjs --log-level=error && node node_modules/.cache/check-correctness.mjs",
+    "benchmark": "esbuild scripts/benchmark.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/benchmark.mjs --log-level=error && node node_modules/.cache/benchmark.mjs",
+    "check:types": "tsc --noEmit",
+    "replay": "esbuild scripts/replay.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/replay.mjs --log-level=error && node node_modules/.cache/replay.mjs"
   },
   "keywords": [
     "guitar",

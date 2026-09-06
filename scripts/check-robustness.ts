@@ -1,3 +1,4 @@
+import { random } from './seeded'
 /**
  * Robustness tests for the adaptive parts. Run with: npm run check:robustness
  *
@@ -41,7 +42,7 @@ function makeSource(noise: number) {
         let s = 0
         for (let k = 0; k < partials.length; k++) s += partials[k] * Math.sin(phase * (k + 1))
         phase += step
-        const v = 0.25 * env * s + noise * (Math.random() * 2 - 1)
+        const v = 0.25 * env * s + noise * (random() * 2 - 1)
         const q = Math.round(Math.max(-1, Math.min(1, v)) * 32767)
         bytes[i * 2] = q & 0xff
         bytes[i * 2 + 1] = (q >> 8) & 0xff
@@ -64,7 +65,7 @@ function play(
   src.pluck(midiToFreq(s.midi, 440) * Math.pow(2, cents / 1200))
   for (let f = 0; f < maxFrames; f++) {
     now.t += FRAME_MS
-    tuner.ingest(src.frame())
+    tuner.ingest(src.frame(), now.t)
     tuner.advance(now.t)
     const v = tuner.view()
     if (v.stringIndex === index && v.cents !== null && !v.offScale) return f + 1
@@ -81,7 +82,7 @@ function silence(
   src.pluck(0)
   for (let f = 0; f < frames; f++) {
     now.t += FRAME_MS
-    tuner.ingest(src.frame())
+    tuner.ingest(src.frame(), now.t)
     tuner.advance(now.t)
   }
 }
@@ -110,7 +111,7 @@ console.log('\nlong session in a noisy room')
   const lat: number[] = []
   let missed = 0
   for (let round = 0; round < 120; round++) {
-    const f = play(tuner, src, now, round % 6, (Math.random() - 0.5) * 40)
+    const f = play(tuner, src, now, round % 6, (random() - 0.5) * 40)
     if (f < 0) missed++
     else lat.push(f)
     silence(tuner, src, now, 6)
@@ -138,7 +139,7 @@ console.log('\naccuracy across a session')
     src.pluck(midiToFreq(s.midi, 440) * Math.pow(2, -8 / 1200))
     for (let f = 0; f < 25; f++) {
       now.t += FRAME_MS
-      tuner.ingest(src.frame())
+      tuner.ingest(src.frame(), now.t)
       tuner.advance(now.t)
     }
     const v = tuner.view()
@@ -204,7 +205,7 @@ console.log('\nother strings ringing sympathetically')
       }
       age += N
       t += FRAME_MS
-      tuner.ingest(b)
+      tuner.ingest(b, t)
       tuner.advance(t)
       if (f < 10) continue
       const v = tuner.view()
@@ -234,7 +235,7 @@ console.log('\nlocked mode ignores other strings')
   let readings = 0
   for (let f = 0; f < 30; f++) {
     now.t += FRAME_MS
-    tuner.ingest(src.frame())
+    tuner.ingest(src.frame(), now.t)
     tuner.advance(now.t)
     if (tuner.view().cents !== null) readings++
   }

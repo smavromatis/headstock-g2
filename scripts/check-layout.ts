@@ -34,7 +34,7 @@ function check(name: string, ok: boolean, detail: string) {
 for (const preset of TUNINGS) {
   for (let capo = 0; capo <= MAX_CAPO; capo++) {
     const tuning = transposeTuning(preset, capo)
-    for (const phase of ['reading', 'listening', 'idle', 'micError'] as const) {
+    for (const phase of ['reading', 'stale', 'listening', 'idle', 'micError'] as const) {
       for (const locked of [false, true]) {
         for (let cents = -60; cents <= 60; cents += 0.25) {
           {

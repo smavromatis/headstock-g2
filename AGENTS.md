@@ -9,7 +9,9 @@ discoverable from the source and cost real time to find.
     npm run dev                # dev server on :5173
     npx evenhub qr             # load on the glasses over the LAN
     npm run sim                # desktop simulator (it has no audio input)
-    npm run check              # glyphs, layout, detection, robustness
+    npm run check              # types, glyphs, layout, deterministic regressions, benchmarks
+    npm run benchmark          # filters, actual renderer positions, phase-window audit
+    npm run replay -- tone.pcm # explicit local PCM replay
     npm run gen:metrics        # regenerate the font table
     npm run pack               # produces headstock.ehpk
 
@@ -23,6 +25,8 @@ production builds.
     src/tuner.ts              state machine: audio in, view model out
     src/bridge-queue.ts       serialises every call over the BLE link
     src/config.ts             shared thresholds
+    src/microphone.ts         desired capture, late replies, disconnect state
+    src/diagnostics.ts        opt-in bounded numeric traces
     src/audio/pitch.ts        YIN plus phase refinement
     src/audio/stream.ts       PCM decoding, ring buffer, smoothing
     src/tuning/notes.ts       note maths, tunings, capo
@@ -43,10 +47,22 @@ windows. The refinement is not optional: YIN alone reads 4.2 cents sharp on a
 nylon low E, whose upper partials sit above exact harmonics and pull the period
 with them.
 
-Within 8 cents the window doubles to 512 ms, halving estimate variance. When a
-string is locked the search narrows to three semitones around it. Frames taken
-while the level is falling steeply are skipped, since a decaying string's pitch
-is moving rather than being mismeasured.
+Analysis uses a fixed 256 ms window and a minimum 1600-new-sample hop. The
+old doubled YIN window did not double the fixed phase windows; seeded trials
+showed no consistent variance improvement. Bounds come from the sounding
+preset/capo/A4 with three semitones of detuning, or the locked target alone.
+Integer-lag search includes interpolation neighbours; final frequency must
+still lie inside the requested bounds. Weak fundamental energy rejects phase
+refinement instead of accepting arbitrary phase.
+
+Packets carry receipt times in the same clock domain as `advance(now)`; virtual
+time tests must pass `ingest(bytes, now)`. Gaps over 250 ms clear continuity.
+Only new accepted measurements can settle; both elapsed time and distinct audio
+samples must span the 800 ms hold. Confirmation uses raw measured cents;
+log-frequency median/EMA filtering drives the pointer separately. A recent-hop
+level check invalidates silence before old samples leave the analysis window.
+Steep decay is checked on both the analysis window and latest hop. This remains
+an instrument-policy choice requiring real G2 recordings, not proof of accuracy.
 
 ## The display
 
@@ -54,7 +70,7 @@ is moving rather than being mismeasured.
 
 Everything is text. An image container costs 0.5 to 2 seconds per frame over
 BLE, so a bitmap needle would run below 1 fps. Frames go out as
-`textContainerUpgrade`, which updates in place without flicker at 10 fps.
+`textContainerUpgrade`, with a requested cadence of 10 fps. Delivery rate requires hardware measurement.
 
 The font is proportional, so the meter is built from measured cells. Block, box
 and geometric glyphs are all exactly 20 px; a space is 5 px. The needle row is
@@ -71,7 +87,7 @@ scales, which teleported the needle 150 px whenever it switched. The in-tune
 band is drawn as a region because at +/-1.5 cents it is 40 px wide either side,
 where a centre tick was 7 px and impossible to aim into.
 
-Font metrics are generated for the 57 characters the app can draw. Add a
+Font metrics are generated for the 59 characters the app can draw. Add a
 character to any string the glasses render and rerun `npm run gen:metrics`;
 `prebuild` does it for normal builds.
 
@@ -93,14 +109,22 @@ character to any string the glasses render and rerun `npm run gen:metrics`;
 - Every bridge call shares one BLE link and must queue through
   `src/bridge-queue.ts`. Concurrent calls can drop the connection, and that
   includes storage writes and microphone control, not only rendering.
+- A timed-out caller does not release the physical bridge lane. New work is
+  dropped while degraded, waiting callers expire, and a late settlement
+  recovers the lane. There is no verified cancellation API. If a host operation
+  never settles, close and reopen Headstock; never force the queue forward.
+- Display caches advance only on `true`. Failures retry on subsequent frames
+  with 200–2000 ms backoff. Generation checks discard obsolete completions and
+  unsent rows expire after 500 ms. Separate text calls cannot be atomic on G2;
+  an already-running call cannot be cancelled.
 - Browser `localStorage` is unreliable across restarts in this WebView. Settings
   go to `bridge.setLocalStorage`, debounced.
 - `setBackgroundState` and `onBackgroundRestore` do not exist in SDK 0.0.14
-  despite being documented, while `LONG_PRESS_EVENT` and the contextual-menu
-  API exist but are absent from it.
+  despite earlier documentation. The September 2026 official documentation now
+  covers `LONG_PRESS_EVENT` and the contextual-menu API.
 - The OS opens the contextual menu on a tap followed by a press and hold, and
-  renders `menuObject` itself. Confirmed on hardware; the gesture is documented
-  nowhere. The app does not handle long press at all: it belongs to the
+  renders `menuObject` itself. Previously confirmed on hardware; the gesture is
+  now documented in the official Device APIs guide. The app does not handle long press at all: it belongs to the
   firmware, and acting on it as well changed the tuning underneath the menu the
   user was reading.
 - Some glyphs are missing from the firmware font and render as nothing:
@@ -119,8 +143,8 @@ character to any string the glasses render and rerun `npm run gen:metrics`;
 
 ## Anything adaptive
 
-Four mechanisms adapt while the app runs: the noise gate, the smoothing
-constant, the analysis window and the auto-detect label. Every bug found in
+Three mechanisms adapt while the app runs: the noise gate, the smoothing
+constant and the auto-detect label. Every bug found in
 them had one of two shapes, so check both before adding another:
 
 **A threshold with no hysteresis.** A bare comparison flips every frame while
@@ -164,6 +188,12 @@ search that fed back on itself, and a decay rejection that compared the level
 against itself. Each check has been verified to fail when its bug is
 reintroduced. Do that for any new one; a check that cannot fail is worse
 than none, because it reads as coverage.
+
+Implementation evidence, reproducible commands, known limits and physical G2
+sign-off steps are in [docs/implementation-report.md](docs/implementation-report.md).
+`?diagnostics=1` in a development build enables a 1000-event numeric ring at
+`window.__headstockDiagnostics.snapshot()`. It contains no recordings and sends
+nothing. Production builds do not expose the development console harness.
 
 ## Identity
 
